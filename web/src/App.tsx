@@ -1,122 +1,93 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './hooks/useAuth';
+import { DashboardLayout } from './components/layout/DashboardLayout';
+import { NavPage } from './components/layout/Sidebar';
+import { ApiService } from './services/api';
+import { Complaint } from './types/complaint';
 
-function App() {
-  const [count, setCount] = useState(0)
+// Active Pages
+import { Dashboard } from './pages/Dashboard';
+import { Reports } from './pages/Reports';
+import { ReportDetails } from './pages/ReportDetails';
+import { CommitteeManagement } from './pages/CommitteeManagement';
+import { WitnessQuorumPage } from './pages/WitnessQuorumPage';
+import { InvestigationInboxPage } from './pages/InvestigationInboxPage';
+import { RepeatAllegations } from './pages/RepeatAllegations';
+import { EmailNotices } from './pages/EmailNotices';
+
+function AppContent() {
+  const { currentUser } = useAuth();
+  const [currentPage, setCurrentPage] = useState<NavPage>('dashboard');
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('INC-892');
+  const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(1);
+
+  // Monitor challenges to update badge dynamically
+  useEffect(() => {
+    ApiService.getChallenges().then((res) => {
+      if (res.data) {
+        const pending = res.data.filter((c) => c.status === 'pending_independent_review').length;
+        setPendingChallengesCount(pending);
+      }
+    });
+  }, [currentUser.id, currentPage]);
+
+  const handleNavigate = (page: NavPage, caseId?: string) => {
+    if (caseId) setSelectedCaseId(caseId);
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <Dashboard onNavigate={handleNavigate} />;
+      case 'reports':
+        return (
+          <Reports
+            onSelectComplaint={(complaint: Complaint) => {
+              setSelectedCaseId(complaint.id);
+              setCurrentPage('report_details');
+            }}
+          />
+        );
+      case 'report_details':
+        return (
+          <ReportDetails
+            complaintId={selectedCaseId}
+            onBack={() => setCurrentPage('reports')}
+            onNavigate={handleNavigate}
+          />
+        );
+      case 'committee':
+        return <CommitteeManagement />;
+      case 'witness':
+        return <WitnessQuorumPage />;
+      case 'inbox':
+        return <InvestigationInboxPage />;
+      case 'repeat_allegations':
+        return <RepeatAllegations />;
+      case 'email_notices':
+        return <EmailNotices />;
+      default:
+        return <Dashboard onNavigate={handleNavigate} />;
+    }
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <DashboardLayout
+      currentPage={currentPage}
+      onNavigate={handleNavigate}
+      pendingChallengesCount={pendingChallengesCount}
+    >
+      {renderPage()}
+    </DashboardLayout>
+  );
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
