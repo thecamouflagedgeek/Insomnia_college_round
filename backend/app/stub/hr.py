@@ -9,15 +9,18 @@ access rules the dashboard used to check in the browser:
   invites witnesses; witness responses are masked for everyone else.
 
 Stand-in auth: X-Stub-Admin (the stub's shared key) + X-Staff-Id (who is acting). M2's real auth replaces both."""
+import hashlib
 import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.chain.hashing import content_sha256
 from app.stub.api import (_chain, _store, add_message, create_invitation, decide_challenge)
-from app.stub.store import DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec
+from app.stub import intelligence
+from app.stub.store import DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, new_id, now
+from app.utils.pdf_generator import investigation_pdf
 
 SUPERVISORY = {"hr_reviewer", "independent_reviewer", "administrator"}
 
@@ -26,9 +29,6 @@ _CATEGORY = {"Sexual Harassment": "sexual_harassment", "Discrimination": "discri
 _POOL = {"sexual_harassment": "posh_harassment", "discrimination": "discrimination_inclusion",
          "whistleblowing_bribery": "whistleblowing_ethics", "workplace_retaliation": "whistleblowing_ethics",
          "bullying_authority_abuse": "workplace_conduct"}
-# Rule-based placeholder until M3's severity engine is wired in.
-_SEVERITY = {"sexual_harassment": "high", "workplace_retaliation": "high", "whistleblowing_bribery": "high",
-             "discrimination": "medium", "bullying_authority_abuse": "medium"}
 _CONFLICT = {"Professional relationship": "hierarchy_direct", "Personal relationship": "personal_relationship",
              "Prior involvement": "prior_retaliation_involvement", "Other": "departmental_bias"}
 _CHALLENGE_STATUS = {"pending_review": "pending_independent_review", "upheld": "approved_access_revoked",
@@ -129,9 +129,7 @@ def _evidence_status(request: Request, case: Case, verification) -> dict[str, st
 def complaint_dto(request: Request, case: Case, verification=None) -> dict:
     p = case.payload
     cat = _category(case)
-    severity = _SEVERITY[cat]
-    if case.evidence and severity == "high":
-        severity = "critical"
+    sev = case.severity or intelligence.severity(p["title"], p["description"], p["category"])
     ev_status = _evidence_status(request, case, verification)
     evidence = [{
         "id": e.evidence_id, "name": e.name, "size": f"{e.size / 1024:.1f} KB", "mimeType": e.mime,
@@ -143,13 +141,15 @@ def complaint_dto(request: Request, case: Case, verification=None) -> dict:
     pending = next((c for c in case.challenges if c.status == "pending_review"), None)
     return {
         "id": case.case_id, "anonymousToken": f"ZK-ANON-{case.nullifier[:4]}-{case.nullifier[-4:]}",
-        "category": cat, "categoryLabel": p["category"], "severity": severity, "status": status,
+        "category": cat, "categoryLabel": p["category"], "severity": sev["level"],
+        "severitySignals": sev.get("signals", []), "integrityFlags": list(case.integrity_flags), "status": status,
         "title": p["title"], "summary": p["description"], "submittedAt": case.created_at,
         "departmentScope": "Organisation-wide", "assignedInvestigatorId": case.investigator_id,
         "committeeMemberIds": [m["member_id"] for m in case.committee], "revokedMemberIds": list(case.revoked_ids),
         "activeChallengeId": pending.challenge_id if pending else None, "evidence": evidence,
         "blockchainSealTx": case.proof_tx, "zkpNullifierHash": case.nullifier,
-        "witnessQuorumActive": status == "witness_quorum_active", "requiredNextAction": _next_action(status)}
+        "witnessQuorumActive": status == "witness_quorum_active", "requiredNextAction": _next_action(status),
+        "resolution": case.resolution, "hasSubjectRef": case.subject_ref is not None}
 
 
 def challenge_dto(case: Case, ch: ChallengeRec) -> dict:
@@ -183,6 +183,10 @@ def _audit_details(event_type: str, data: dict) -> tuple[str, str]:
         "evidence_sealed": ("Evidence vault", f"Evidence {data.get('evidence_id')} sealed "
                             f"({data.get('size')} bytes)."),
         "witness_quorum_started": ("Investigator", "Witness quorum opened."),
+        "severity_assessed": ("Severity engine", f"Triage level {data.get('level')} (human review required)."),
+        "resolution_recorded": ("Investigation team", "Resolution and reform actions recorded."),
+        "reflection_recorded": ("Employee (anonymous)", "Reflect & Reform feedback received."),
+        "export_generated": ("Legal export", f"Evidence package {data.get('export_id')} generated."),
         "witness_response_recorded": ("Witness (anonymous)", f"Responses: {data.get('accepted_count')} accepted, "
                                       f"{data.get('declined_count')} declined."),
     }.get(event_type, ("System", event_type.replace("_", " ")))
@@ -203,6 +207,19 @@ def audit_dtos(request: Request, case: Case) -> list[dict]:
             "merkleRoot": r.entry_hash if r else "", "blockNumber": (r.anchor_block or 0) if r else 0,
             "txHash": (r.anchor_tx or "") if r else "", "verificationStatus": _VERIFY[e.status]})
     return out
+
+
+class ResolveIn(BaseModel):
+    outcome: Literal["substantiated", "partially_substantiated", "not_substantiated", "resolved_informally"]
+    summary: str = Field(min_length=15, max_length=5000)  # HR-only; encrypted at rest; reporter sees outcome + actions
+    actions: list[str] = Field(default_factory=list, max_length=10)
+
+
+REFLECTION_MIN_K = 3  # Reflect & Reform insights stay hidden until at least this many reporters responded
+
+
+def _case_text(case: Case) -> str:
+    return f"{case.payload['title']} {case.payload['description']}"
 
 
 class DecideIn(BaseModel):
@@ -364,6 +381,132 @@ def build_hr_router() -> APIRouter:
         at = next((e.at for e in verification.events if e.event_type == "evidence_sealed"), None)
         return {"verified": status == "verified" and sha_ok, "sha256Matches": sha_ok,
                 "zkpVerified": bool(c.nullifier), "anchorStatus": status, "blockTimestamp": at}
+
+    @r.get("/cases/{case_id}/related")
+    def related_cases(request: Request, case_id: str, user: Staff = Depends(staff)):
+        """Incident Correlation + Repeat Allegation Intelligence for one case, over cases this user may access."""
+        c = _case_for(request, user, case_id)
+        others = [o for o in _store(request).cases.values() if o.case_id != case_id and can_access(user, o)]
+        prior_refs = {o.subject_ref for o in others if o.subject_ref}
+        repeat = intelligence.repeat(c.subject_ref, prior_refs)
+        same_subject = [o.case_id for o in others if c.subject_ref and o.subject_ref == c.subject_ref]
+        return {"case_id": case_id,
+                "similar": intelligence.related(_case_text(c), [(o.case_id, _case_text(o)) for o in others]),
+                "repeat": {**repeat, "case_ids": same_subject}}
+
+    @r.get("/patterns")
+    def patterns(request: Request, user: Staff = Depends(staff)):
+        """Pattern Intelligence: repeat-subject clusters (structured reference) and correlated case pairs."""
+        cases = [c for c in _store(request).cases.values() if can_access(user, c)]
+        by_subject: dict[str, list[Case]] = {}
+        for c in cases:
+            if c.subject_ref:
+                by_subject.setdefault(c.subject_ref, []).append(c)
+        repeats = [{"subjectRef": "SUBJ-" + hashlib.sha256(ref.encode()).hexdigest()[:8],  # opaque even to HR UI
+                    "caseIds": [c.case_id for c in group], "count": len(group),
+                    "categories": sorted({c.payload["category"] for c in group}),
+                    "basis": "structured_reference", "human_review_required": True}
+                   for ref, group in by_subject.items() if len(group) >= 2]
+        pairs = []
+        for i, a in enumerate(cases):
+            for m in intelligence.related(_case_text(a), [(b.case_id, _case_text(b)) for b in cases[i + 1:]]):
+                pairs.append({"caseIds": [a.case_id, m["case_id"]], "score": m["score"], "method": m["method"]})
+        return {"repeatSubjects": sorted(repeats, key=lambda d: -d["count"]),
+                "correlatedPairs": sorted(pairs, key=lambda d: -d["score"]),
+                "limitation": "Patterns are review cues, not findings. Reports remain separate cases."}
+
+    @r.post("/cases/{case_id}/resolve")
+    def resolve(request: Request, case_id: str, body: ResolveIn, user: Staff = Depends(staff)):
+        c = _case_for(request, user, case_id)
+        if user.role not in ("assigned_investigator", "hr_reviewer", "administrator"):
+            raise _forbidden("403: Forbidden - Only the investigation team can record a resolution.")
+        if any(ch.status == "pending_review" for ch in c.challenges):
+            raise HTTPException(409, {"reason": "challenge_pending"})
+        if c.resolution is not None:
+            raise HTTPException(409, {"reason": "already_resolved"})
+        store = _store(request)
+        with store.lock:
+            rid = new_id("RES")
+            c.resolution = {"resolution_id": rid, "outcome": body.outcome, "summary": body.summary,
+                            "actions": body.actions, "by": user.id, "at": now()}
+            digest = content_sha256(f"{body.outcome}\n{body.summary}\n{chr(10).join(body.actions)}".encode())
+            _chain(request).audit.record(case_id, "resolution_recorded", {"resolution_id": rid, "content_sha256": digest})
+            _chain(request).audit.record(case_id, "status_changed", {"from": c.status, "to": "resolved"})
+            c.status = "resolved"
+            store.save()
+        return complaint_dto(request, c)
+
+    @r.get("/insights")
+    def insights(request: Request, user: Staff = Depends(staff)):
+        """Reflect & Reform: aggregate reporter feedback. Suppressed below k responses so no rating is attributable."""
+        if user.role not in SUPERVISORY:
+            raise _forbidden("403: Forbidden - Reflect & Reform insights are for HR and oversight roles.")
+        cases = list(_store(request).cases.values())
+        refl = [c.reflection for c in cases if c.reflection]
+        resolved = [c for c in cases if c.resolution]
+        outcomes: dict[str, int] = {}
+        actions: dict[str, int] = {}
+        for c in resolved:
+            outcomes[c.resolution["outcome"]] = outcomes.get(c.resolution["outcome"], 0) + 1
+            for a in c.resolution["actions"]:
+                actions[a] = actions.get(a, 0) + 1
+        base = {"resolvedCases": len(resolved), "outcomes": outcomes,
+                "reformActions": sorted(({"action": a, "count": n} for a, n in actions.items()),
+                                        key=lambda d: -d["count"]),
+                "minimumResponses": REFLECTION_MIN_K}
+        if len(refl) < REFLECTION_MIN_K:
+            return {**base, "suppressed": True, "responses": None}
+        n = len(refl)
+        return {**base, "suppressed": False, "responses": n,
+                "averageFairness": round(sum(r["fairness"] for r in refl) / n, 2),
+                "feltSafePct": round(100 * sum(r["felt_safe"] for r in refl) / n),
+                "wouldReportAgainPct": round(100 * sum(r["would_report_again"] for r in refl) / n)}
+
+    @r.get("/cases/{case_id}/export.pdf")
+    def export_pdf(request: Request, case_id: str, user: Staff = Depends(staff)):
+        """Legal Evidence Package (M3's PDF generator): case record, challenge history, evidence manifest with hashes,
+        and the Silent Audit trail with Polygon anchors, so a third party can re-verify it. The export is audited."""
+        c = _case_for(request, user, case_id)
+        if user.role not in ("assigned_investigator", "hr_reviewer", "independent_reviewer", "administrator"):
+            raise _forbidden("403: Forbidden - Exports are limited to the investigation team and oversight.")
+        chain = _chain(request)
+        verification = chain.verifier.verify(case_id)
+        receipts = chain.verifier.receipts(case_id)
+        p = c.payload
+        name = lambda i: STAFF.get(i, {}).get("name", i)  # noqa: E731
+        sections = [
+            ("Case", f"Reference: {c.case_id}\nCategory: {p['category']}\nSeverity (triage): "
+                     f"{(c.severity or {}).get('level', 'n/a')}\nStatus: {c.status}\nSubmitted: {c.created_at}\n"
+                     f"Reporter: anonymous (Semaphore proof, nullifier {c.nullifier[:16]}...)\n"
+                     f"Proof transaction: {c.proof_tx}"),
+            ("Report", f"Title: {p['title']}\nIncident date: {p.get('incident_date') or 'not given'}\n\n"
+                       f"{p['description']}"),
+            ("Committee", "\n".join(f"{m['name']} ({m['role']})" for m in c.committee)
+                          + ("\nRemoved after challenge: " + ", ".join(name(i) for i in c.revoked_ids)
+                             if c.revoked_ids else "")),
+            ("Committee challenges", "\n".join(
+                f"{ch.challenge_id}: {name(ch.member_id)}, {ch.reason}, {ch.status}"
+                + (f" by {name(ch.reviewer_id)} on {ch.decided_at}: {ch.rationale}" if ch.decided_at else "")
+                for ch in c.challenges) or "None"),
+            ("Resolution", (f"Outcome: {c.resolution['outcome']}\n{c.resolution['summary']}\nActions: "
+                            + "; ".join(c.resolution["actions"])) if c.resolution else "Open"),
+            ("Silent Audit verification", f"Overall: {'VERIFIED' if verification.ok else 'FAILED'}"
+                                          f" (first bad event: {verification.first_bad_seq})\n" + "\n".join(
+                f"#{r.seq} {r.event_type} {r.at} entry {r.entry_hash[:18]}... anchor tx "
+                f"{(r.anchor_tx or 'pending')[:20]}" for r in receipts)),
+        ]
+        manifest = [{"evidence_id": e.evidence_id, "name": e.name, "mime": e.mime, "bytes": e.size,
+                     "sha256": e.sha256} for e in c.evidence]
+        pdf = investigation_pdf(f"INCOGNITO Legal Evidence Package - {c.case_id}", sections, manifest)
+        store = _store(request)
+        with store.lock:
+            export_id = new_id("EXP")
+            chain.audit.record(case_id, "export_generated", {"export_id": export_id,
+                                                              "content_sha256": content_sha256(pdf)})
+            store.save()
+        return Response(pdf, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="{c.case_id}-evidence-package.pdf"',
+            "X-Export-Id": export_id, "X-Content-SHA256": content_sha256(pdf)})
 
     @r.get("/committee-pool")
     def pool(request: Request, pool_id: str | None = None, user: Staff = Depends(staff)):

@@ -81,6 +81,7 @@ components:
         description: {type: string, maxLength: 20000}
         incident_date: {type: [string, 'null'], format: date}
         client_nonce: {type: string, minLength: 8, maxLength: 64, description: Random per submission}
+        subject_ref: {type: [string, 'null'], maxLength: 64, description: 'Opaque directory reference of the person reported, picked from a list (never a typed name). Enables Repeat Allegation Intelligence; HR-only.'}
     ChallengePayload:
       type: object
       required: [member_id, reason, explanation, client_nonce]
@@ -126,6 +127,13 @@ components:
         committee: {type: array, items: {$ref: '#/components/schemas/CommitteeMember'}}
         evidence: {type: array, items: {$ref: '#/components/schemas/EvidenceView'}}
         challenges: {type: array, items: {$ref: '#/components/schemas/ChallengeView'}}
+        resolution:
+          type: [object, 'null']
+          properties:
+            outcome: {type: string, enum: [substantiated, partially_substantiated, not_substantiated, resolved_informally]}
+            actions: {type: array, items: {type: string}, description: Reform actions the organisation committed to}
+            at: {type: string, format: date-time}
+        reflection_submitted: {type: boolean}
     Message:
       type: object
       properties:
@@ -312,7 +320,7 @@ paths:
                   proof_tx: {type: string}
                   explorer_url: {type: string}
         '400': {description: Proof rejected (reason codes above)}
-        '422': {description: 'bad_payload | unknown_category'}
+        '422': {description: 'bad_payload | unknown_category | claim_integrity (detail.flags; checked before the proof, so the daily report is not used up)'}
   /reports/{case_id}:
     parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
     get:
@@ -377,6 +385,25 @@ paths:
                   explorer_url: {type: string}
         '400': {description: Proof rejected}
         '422': {description: 'bad_payload | unknown_member | unknown_reason'}
+  /reports/{case_id}/reflection:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Reflect & Reform. Anonymous structured feedback on how the case was handled (once, after resolution)
+      security: [{caseToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fairness, felt_safe, would_report_again]
+              properties:
+                fairness: {type: integer, minimum: 1, maximum: 5}
+                felt_safe: {type: boolean}
+                would_report_again: {type: boolean}
+      responses:
+        '201': {description: Recorded}
+        '409': {description: 'not_resolved | already_reflected'}
   /reports/{case_id}/messages:
     parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
     get:

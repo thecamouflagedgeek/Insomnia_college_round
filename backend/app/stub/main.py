@@ -2,6 +2,7 @@
 
 CHAIN_MODE=offline (default): no chain, no DB, proofs not checked cryptographically. For UI work.
 CHAIN_MODE=live: real Semaphore group + CaseAuditRegistry on Amoy (needs the repo .env and DATABASE_URL)."""
+import base64
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -53,7 +54,8 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     if mode not in ("offline", "live"):
         raise RuntimeError("CHAIN_MODE must be offline or live")
     settings = ChainSettings.from_env({**_OFFLINE_DEFAULTS, **env} if mode == "offline" else env)
-    store = StubStore(env.get("STUB_STATE_PATH") or None)
+    key = env.get("ENCRYPTION_KEY")
+    store = StubStore(env.get("STUB_STATE_PATH") or None, base64.urlsafe_b64decode(key) if key else None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

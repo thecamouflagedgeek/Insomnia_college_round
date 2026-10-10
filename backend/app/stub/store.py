@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.services.encryption_service import EncryptedField, EncryptionService
+
 # Staff directory: the same people as the HR dashboard's demo users (web/src/types/auth.ts), so a staff member's
 # id means the same thing in the app, the dashboard and the audit trail. M2's real auth replaces this.
 STAFF = {
@@ -105,6 +107,12 @@ class Case:
     revoked_ids: list[str] = field(default_factory=list)
     nullifier: str = ""
     proof_tx: str = ""
+    severity: dict = field(default_factory=dict)
+    integrity_flags: list[str] = field(default_factory=list)
+    subject_ref: str | None = None
+    fingerprint: str = ""
+    resolution: dict | None = None
+    reflection: dict | None = None
     evidence: list[Evidence] = field(default_factory=list)
     challenges: list[ChallengeRec] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
@@ -118,8 +126,12 @@ class StubStore:
     """Process-local workflow state, optionally mirrored to a JSON file so a restart keeps cases whose audit
     events already live in Postgres/on-chain. Never stores reporter identity: only a hash of the case token."""
 
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: str | None = None, encryption_key: bytes | None = None):
         self._path = Path(path) if path else None
+        if self._path and encryption_key is None:
+            raise RuntimeError("STUB_STATE_PATH needs ENCRYPTION_KEY: the state file holds report content")
+        # M3's AES-256-GCM service; each field is bound to its record and field name (associated data).
+        self._crypto = EncryptionService(encryption_key) if encryption_key else None
         self._lock = threading.RLock()
         self.cases: dict[str, Case] = {}
         self.invitations: dict[str, Invitation] = {}
@@ -130,7 +142,7 @@ class StubStore:
         if not self._path:
             return
         with self._lock:
-            data = {"cases": [asdict(c) for c in self.cases.values()],
+            data = {"cases": [self._seal(asdict(c)) for c in self.cases.values()],
                     "invitations": [asdict(i) for i in self.invitations.values()]}
             tmp = self._path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data))
@@ -139,12 +151,41 @@ class StubStore:
     def _load(self) -> None:
         data = json.loads(self._path.read_text())
         for c in data.get("cases", []):
+            c = self._open(c)
             c["evidence"] = [Evidence(**e) for e in c["evidence"]]
             c["challenges"] = [ChallengeRec(**x) for x in c["challenges"]]
             c["messages"] = [Message(**m) for m in c["messages"]]
             self.cases[c["case_id"]] = Case(**c)
         for i in data.get("invitations", []):
             self.invitations[i["invitation_id"]] = Invitation(**i)
+
+    # Sensitive fields are encrypted in the state file and plaintext only in memory.
+    def _enc(self, value: str, case_id: str, name: str) -> str:
+        return self._crypto.encrypt_field(value, "case", case_id, name).ciphertext if value else value
+
+    def _dec(self, value: str, case_id: str, name: str) -> str:
+        if not value:
+            return value
+        return self._crypto.decrypt_field(EncryptedField(value, f"case:{case_id}:{name}"), "case", case_id, name)
+
+    def _transform(self, c: dict, f) -> dict:
+        cid = c["case_id"]
+        c["raw_payload"] = f(c["raw_payload"], cid, "raw_payload")
+        for m in c["messages"]:
+            m["text"] = f(m["text"], cid, f"message:{m['message_id']}")
+        for e in c["evidence"]:
+            e["content_b64"] = f(e["content_b64"], cid, f"evidence:{e['evidence_id']}")
+        for ch in c["challenges"]:
+            ch["explanation"] = f(ch["explanation"], cid, f"challenge:{ch['challenge_id']}")
+        if c.get("resolution"):
+            c["resolution"]["summary"] = f(c["resolution"]["summary"], cid, "resolution")
+        return c
+
+    def _seal(self, c: dict) -> dict:
+        return self._transform(c, self._enc)
+
+    def _open(self, c: dict) -> dict:
+        return self._transform(c, self._dec)
 
     @property
     def lock(self) -> threading.RLock:

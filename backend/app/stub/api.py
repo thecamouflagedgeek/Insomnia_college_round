@@ -13,6 +13,7 @@ from app.chain.routes import complaint_scope_texts
 from app.chain.semaphore import ProofIn
 from app.chain.signals import challenge_scope_text
 from app.chain.zk_service import ProofRejected
+from app.stub import intelligence
 from app.stub.store import COMMITTEE, DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, Evidence, Invitation, \
     Message, StubStore, committee_entry, new_id, now, token_hash
 
@@ -21,16 +22,6 @@ MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
 CATEGORIES = ["Harassment", "Sexual Harassment", "Bullying", "Discrimination", "Abuse of Authority", "Retaliation",
               "Fraud", "Safety", "Other"]
 CHALLENGE_REASONS = ["Professional relationship", "Personal relationship", "Prior involvement", "Other"]
-_KEYWORDS = {
-    "Sexual Harassment": ["sexual", "touch", "inappropriate comment", "advances"],
-    "Harassment": ["harass", "unwelcome", "stalk", "threat"],
-    "Bullying": ["bully", "humiliat", "yell", "shout", "belittl", "intimidat"],
-    "Discrimination": ["discriminat", "gender", "caste", "religion", "race", "pregnan", "disab", "age "],
-    "Abuse of Authority": ["manager", "boss", "power", "authority", "forced", "promotion"],
-    "Retaliation": ["retaliat", "revenge", "after i reported", "punish"],
-    "Fraud": ["fraud", "brib", "embezzl", "kickback", "fake invoice"],
-    "Safety": ["unsafe", "injur", "hazard", "fire", "accident"],
-}
 
 
 # ---- request models --------------------------------------------------------------------------------------------
@@ -43,6 +34,9 @@ class ReportPayload(BaseModel):
     description: str = Field(min_length=1, max_length=20000)
     incident_date: date | None = None
     client_nonce: str = Field(min_length=8, max_length=64)
+    # Opaque directory reference for the person reported, chosen from a list (never a typed name). Enables Repeat
+    # Allegation Intelligence; visible to authorised HR staff only.
+    subject_ref: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class SubmitReportIn(BaseModel):
@@ -68,6 +62,13 @@ class MessageIn(BaseModel):
 
 class ClassifyIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
+
+
+class ReflectionIn(BaseModel):
+    """Reflect & Reform: structured, no free text, so feedback cannot identify the reporter."""
+    fairness: int = Field(ge=1, le=5)
+    felt_safe: bool
+    would_report_again: bool
 
 
 class WitnessResponseIn(BaseModel):
@@ -129,6 +130,8 @@ def case_view(case: Case) -> dict:
                       "sha256": e.sha256} for e in case.evidence],
         "challenges": [{"challenge_id": c.challenge_id, "member_id": c.member_id, "reason": c.reason,
                         "status": c.status, "proof_tx": c.proof_tx, "at": c.at} for c in case.challenges],
+        "resolution": ({k: case.resolution[k] for k in ("outcome", "actions", "at")} if case.resolution else None),
+        "reflection_submitted": case.reflection is not None,
     }
 
 
@@ -204,35 +207,39 @@ def build_api_router() -> APIRouter:
 
     @r.post("/classify")
     def classify(body: ClassifyIn):
-        """Stateless keyword stub for M3's classifier. Nothing is logged or stored."""
-        text = body.text.lower()
-        scored = [(cat, sum(k in text for k in kws)) for cat, kws in _KEYWORDS.items()]
-        hits = sorted([s for s in scored if s[1] > 0], key=lambda s: -s[1])[:3]
-        total = sum(n for _, n in hits) or 1
-        return {"suggestions": [{"category": c, "score": round(n / total, 2)} for c, n in hits],
-                "model": "stub-keywords", "retained": False}
+        """M3's classifier (app/engines). Stateless: nothing is logged or stored."""
+        return intelligence.classify(body.text)
 
     @r.post("/reports", status_code=201)
     def submit_report(request: Request, body: SubmitReportIn):
         payload = _parse(ReportPayload, body.payload)
         if payload.category not in CATEGORIES and payload.category != "Uncertain":
             raise HTTPException(422, {"reason": "unknown_category"})
+        fingerprint = content_sha256(" ".join(f"{payload.title} {payload.description}".lower().split()).encode())
+        store = _store(request)
+        check = intelligence.integrity(payload.title, payload.description, payload.category,
+                                       {c.fingerprint for c in store.cases.values()}, fingerprint)
+        if not check["accepted_for_review"]:
+            raise HTTPException(422, {"reason": "claim_integrity", "flags": check["flags"]})
         try:
             ok = _chain(request).zk.verify_submission(
                 body.proof, body.payload, complaint_scope_texts(datetime.now(timezone.utc).date()), "complaint")
         except ProofRejected as exc:
             raise _rejected(exc)
-        store, audit = _store(request), _chain(request).audit
+        audit = _chain(request).audit
         token = secrets.token_urlsafe(32)
+        sev = intelligence.severity(payload.title, payload.description, payload.category)
         with store.lock:
             case_id = new_id("INC")
             case = Case(case_id, token_hash(token), body.payload, "submitted", now(),
-                        nullifier=str(ok.nullifier), proof_tx=ok.tx_hash)
+                        nullifier=str(ok.nullifier), proof_tx=ok.tx_hash, severity=sev,
+                        subject_ref=payload.subject_ref, fingerprint=fingerprint)
             store.cases[case_id] = case
             audit.record(case_id, "complaint_submitted", {
                 "content_sha256": content_sha256(body.payload.encode("utf-8")),
                 "nullifier": str(ok.nullifier), "proof_tx": ok.tx_hash})
             audit.record(case_id, "case_classified", {"category": payload.category})
+            audit.record(case_id, "severity_assessed", {"level": sev["level"]})
             audit.record(case_id, "committee_assigned", {
                 "committee_id": "COM-DEMO", "member_ids": [m["member_id"] for m in COMMITTEE]})
             _set_status(request, case, "committee_assigned")
@@ -284,6 +291,19 @@ def build_api_router() -> APIRouter:
             store.save()
         return {"challenge_id": rec.challenge_id, "member_id": rec.member_id, "status": rec.status,
                 "proof_tx": ok.tx_hash, "explorer_url": _explorer(request, ok.tx_hash)}
+
+    @r.post("/reports/{case_id}/reflection", status_code=201)
+    def reflection(request: Request, body: ReflectionIn, case: Case = Depends(case_access)):
+        if case.resolution is None:
+            raise HTTPException(409, {"reason": "not_resolved"})
+        if case.reflection is not None:
+            raise HTTPException(409, {"reason": "already_reflected"})
+        store = _store(request)
+        with store.lock:
+            case.reflection = {**body.model_dump(), "at": now()}
+            _chain(request).audit.record(case.case_id, "reflection_recorded", {"reflection_id": new_id("REF")})
+            store.save()
+        return {"recorded": True}
 
     @r.get("/reports/{case_id}/messages")
     def messages(case: Case = Depends(case_access)):
