@@ -15,3 +15,4 @@ coverage/
 blockchain/artifacts/
 blockchain/cache/
 backend/models-cache/
+.freebuff

@@ -10,6 +10,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 Copy-Item .env.example .env
 # Edit .env locally; never send or commit secret values.
+# Generate ENCRYPTION_KEY: python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
 uvicorn app.main:app --reload --no-access-log --host 127.0.0.1 --port 8000
 ```
 
@@ -28,6 +29,15 @@ To refresh the shared OpenAPI source after intentional API edits:
 python scripts/export_openapi.py
 python scripts/check_contract.py
 ```
+
+## Encryption key management
+
+`ENCRYPTION_KEY` is a URL-safe Base64-encoded 32-byte (256-bit) key used for AES-256-GCM encryption of sensitive fields (report titles, narratives, witness contacts, message bodies) before persistence.
+
+- **Generate**: `python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"`
+- **Store**: Use a managed secret store (KMS, Vault, cloud secret manager) in production. Never commit the key to source control.
+- **Rotate**: Key rotation requires a migration plan to re-encrypt existing data. Losing or rotating the key without a migration plan makes encrypted data unrecoverable.
+- **Validation**: The application fails closed at startup if `ENCRYPTION_KEY` is missing, is the placeholder value, is not valid URL-safe Base64, or does not decode to exactly 32 bytes. Key material is never logged or included in error messages.
 
 ## Development status
 
