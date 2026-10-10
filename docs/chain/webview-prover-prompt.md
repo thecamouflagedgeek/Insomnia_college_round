@@ -1,6 +1,7 @@
 # Prompt: build the WebView Semaphore prover for the INCOGNITO Flutter app
 
-Copy everything below the line into a coding assistant (or hand it to a teammate). It is self-contained.
+**Owner: M1.** M1 builds, verifies and phone-tests this end to end. Copy everything below the line into a coding
+assistant, or follow it directly. It is self-contained. Questions about ZK encodings or the backend go to M4.
 
 ---
 
@@ -29,6 +30,26 @@ folder on its author's laptop (`/Users/zhengyawen/...`), and the public bindings
 So we run the **official JavaScript library** inside a hidden WebView instead. That library, `@semaphore-protocol/core`
 4.14.3, is already verified against our contract: its proofs are accepted on-chain, replays are rejected, and its
 encodings match the backend byte for byte (`tools/proofgen/gen.mjs`).
+
+## Setup on your machine (one time)
+
+```bash
+git fetch && git checkout feat/m3-integration
+# Backend (Python 3.13+)
+python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
+# JS tooling (Node 20+)
+cd tools/proofgen && npm ci && cd ../..
+# Chain tools: Foundry (gives `anvil`), and Docker for Postgres
+curl -L https://foundry.paradigm.xyz | bash && foundryup
+```
+
+Quick check that the backend runs (no chain, no DB):
+`cd backend && CHAIN_MODE=offline STUB_ADMIN_KEY=adm ../.venv/bin/uvicorn app.stub.main:app --host 0.0.0.0 --port 8000`
+then open `http://localhost:8000/health`.
+
+You do **not** need the M4 relayer key for the fork test: the fork copies Amoy locally. To use group 23 and the
+deployed registry on the fork, the backend still signs as the relayer address, so ask M4 to run step 2 with you, or
+ask for a fork-only setup. Never share or paste the relayer private key.
 
 ## What to build
 
