@@ -1,0 +1,140 @@
+import base64
+import hashlib
+import json
+import os
+import secrets
+import threading
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+COMMITTEE = [
+    {"member_id": "cm-a", "name": "Committee member A", "role": "Presiding officer"},
+    {"member_id": "cm-b", "name": "Committee member B", "role": "Member"},
+    {"member_id": "cm-c", "name": "Committee member C", "role": "External member"},
+]
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}-{secrets.token_hex(4).upper()}"
+
+
+@dataclass
+class Message:
+    message_id: str
+    sender: str  # "you" | "investigator"
+    text: str
+    at: str
+
+
+@dataclass
+class Evidence:
+    evidence_id: str
+    name: str
+    mime: str
+    size: int
+    sha256: str
+    content_b64: str
+
+
+@dataclass
+class ChallengeRec:
+    challenge_id: str
+    member_id: str
+    reason: str
+    explanation: str
+    status: str  # pending_review | upheld | rejected
+    proof_tx: str
+    at: str
+
+
+@dataclass
+class Invitation:
+    invitation_id: str
+    case_id: str
+    code_hash: str
+    context: str
+    response: str | None = None
+
+
+@dataclass
+class Case:
+    case_id: str
+    token_hash: str
+    raw_payload: str
+    status: str
+    created_at: str
+    committee: list[dict] = field(default_factory=lambda: [dict(m) for m in COMMITTEE])
+    evidence: list[Evidence] = field(default_factory=list)
+    challenges: list[ChallengeRec] = field(default_factory=list)
+    messages: list[Message] = field(default_factory=list)
+
+    @property
+    def payload(self) -> dict:
+        return json.loads(self.raw_payload)
+
+
+class StubStore:
+    """Process-local workflow state, optionally mirrored to a JSON file so a restart keeps cases whose audit
+    events already live in Postgres/on-chain. Never stores reporter identity: only a hash of the case token."""
+
+    def __init__(self, path: str | None = None):
+        self._path = Path(path) if path else None
+        self._lock = threading.RLock()
+        self.cases: dict[str, Case] = {}
+        self.invitations: dict[str, Invitation] = {}
+        if self._path and self._path.exists():
+            self._load()
+
+    def save(self) -> None:
+        if not self._path:
+            return
+        with self._lock:
+            data = {"cases": [asdict(c) for c in self.cases.values()],
+                    "invitations": [asdict(i) for i in self.invitations.values()]}
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data))
+            os.replace(tmp, self._path)
+
+    def _load(self) -> None:
+        data = json.loads(self._path.read_text())
+        for c in data.get("cases", []):
+            c["evidence"] = [Evidence(**e) for e in c["evidence"]]
+            c["challenges"] = [ChallengeRec(**x) for x in c["challenges"]]
+            c["messages"] = [Message(**m) for m in c["messages"]]
+            self.cases[c["case_id"]] = Case(**c)
+        for i in data.get("invitations", []):
+            self.invitations[i["invitation_id"]] = Invitation(**i)
+
+    @property
+    def lock(self) -> threading.RLock:
+        return self._lock
+
+    def case_by_token(self, case_id: str, token: str) -> Case | None:
+        case = self.cases.get(case_id)
+        if case and secrets.compare_digest(case.token_hash, token_hash(token)):
+            return case
+        return None
+
+    # Content loaders for CaseVerifier: return the stored bytes an audit event's content_sha256 committed to.
+    def complaint_bytes(self, case_id: str, data: dict) -> bytes | None:
+        case = self.cases.get(case_id)
+        return case.raw_payload.encode("utf-8") if case else None
+
+    def evidence_bytes(self, case_id: str, data: dict) -> bytes | None:
+        case = self.cases.get(case_id)
+        ev = next((e for e in case.evidence if e.evidence_id == data.get("evidence_id")), None) if case else None
+        return base64.b64decode(ev.content_b64) if ev else None
+
+    def message_bytes(self, case_id: str, data: dict) -> bytes | None:
+        case = self.cases.get(case_id)
+        msg = next((m for m in case.messages if m.message_id == data.get("message_id")), None) if case else None
+        return msg.text.encode("utf-8") if msg else None

@@ -1,0 +1,478 @@
+openapi: 3.1.0
+info:
+  title: INCOGNITO employee API
+  version: 0.1.0
+  description: |
+    Contract between the Flutter employee app (M1), the backend (M3), access control (M2) and ZK/chain (M4).
+    Served today by the integration stub (backend/app/stub, `uvicorn app.stub.main:app`); M3's backend must keep
+    these paths and shapes so the app does not change.
+
+    Anonymity rules every implementation must keep:
+    - The phone never sends identity: only a Semaphore identity commitment (once, at enrolment) and ZK proofs.
+    - No IP addresses, device IDs or user agents are logged for /reports*, /zk/*, /witness-invitations*.
+    - The reporter's only credential for a case is the `case_token` returned once by POST /reports. The server
+      stores only sha256(case_token). Lose the token, lose access: the app keeps it in secure storage.
+
+    Proof rules (see docs/chain/zk-interop.md):
+    - Group: GET /zk/group `members` in the given order, as 32-byte little-endian elements. Check your group
+      root equals `onchain_root` before proving.
+    - message = "m:" + sha256hex(utf8(payload)).substring(0, 28), where `payload` is the exact string sent.
+    - scope = `sdk_argument` from GET /zk/scopes/complaint or /zk/scopes/challenge. Depth 16.
+    - Proof JSON is the Semaphore Flutter SDK export as-is (decimal strings, Solidity-packed points).
+    - One complaint per identity per UTC day (the complaint scope is daily); one challenge per committee member
+      per case.
+
+    Errors: `{"detail": {"reason": "<code>"}}`. Proof reasons: message_mismatch, scope_mismatch, replay,
+    invalid_proof, unknown_root, root_expired, bad_depth.
+servers:
+  - url: http://10.0.2.2:8000
+    description: Android emulator to the stub on the dev machine
+  - url: http://localhost:8000
+
+components:
+  securitySchemes:
+    caseToken:
+      type: http
+      scheme: bearer
+      description: case_token from POST /reports
+    enrollCode:
+      type: apiKey
+      in: header
+      name: X-Enroll-Code
+      description: One-time code issued by HR (M2). Stub accepts STUB_ENROLL_CODES (default DEMO-INVITE).
+    witnessCode:
+      type: apiKey
+      in: header
+      name: X-Witness-Code
+      description: Code from a witness invitation, shared out of band.
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: object
+          properties:
+            reason: {type: string}
+    DecimalString:
+      type: string
+      pattern: '^[0-9]+$'
+    Proof:
+      type: object
+      required: [merkle_tree_depth, merkle_tree_root, nullifier, message, scope, points]
+      properties:
+        merkle_tree_depth: {type: integer, const: 16}
+        merkle_tree_root: {$ref: '#/components/schemas/DecimalString'}
+        nullifier: {$ref: '#/components/schemas/DecimalString'}
+        message: {$ref: '#/components/schemas/DecimalString'}
+        scope: {$ref: '#/components/schemas/DecimalString'}
+        points:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items: {$ref: '#/components/schemas/DecimalString'}
+    ReportPayload:
+      description: Serialized to a string and sent as SubmitReport.payload. Never re-serialize after hashing.
+      type: object
+      required: [category, title, description, client_nonce]
+      properties:
+        category: {type: string, description: 'One of GET /categories, or "Uncertain"'}
+        categories: {type: array, items: {type: string}}
+        title: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 20000}
+        incident_date: {type: [string, 'null'], format: date}
+        client_nonce: {type: string, minLength: 8, maxLength: 64, description: Random per submission}
+    ChallengePayload:
+      type: object
+      required: [member_id, reason, explanation, client_nonce]
+      properties:
+        member_id: {type: string, description: From CaseView.committee}
+        reason: {type: string, description: One of GET /categories challenge_reasons}
+        explanation: {type: string, minLength: 15, maxLength: 5000}
+        client_nonce: {type: string, minLength: 8, maxLength: 64}
+    CommitteeMember:
+      type: object
+      properties:
+        member_id: {type: string}
+        name: {type: string}
+        role: {type: string}
+    EvidenceView:
+      type: object
+      properties:
+        evidence_id: {type: string}
+        name: {type: string}
+        mime: {type: string}
+        size: {type: integer}
+        sha256: {type: string}
+    ChallengeView:
+      type: object
+      properties:
+        challenge_id: {type: string}
+        member_id: {type: string}
+        reason: {type: string}
+        status: {type: string, enum: [pending_review, upheld, rejected]}
+        proof_tx: {type: string}
+        at: {type: string, format: date-time}
+    CaseView:
+      type: object
+      properties:
+        case_id: {type: string}
+        status: {type: string, enum: [submitted, committee_assigned, investigating, resolved, closed]}
+        category: {type: string}
+        categories: {type: array, items: {type: string}}
+        title: {type: string}
+        description: {type: string}
+        incident_date: {type: [string, 'null'], format: date}
+        created_at: {type: string, format: date-time}
+        committee: {type: array, items: {$ref: '#/components/schemas/CommitteeMember'}}
+        evidence: {type: array, items: {$ref: '#/components/schemas/EvidenceView'}}
+        challenges: {type: array, items: {$ref: '#/components/schemas/ChallengeView'}}
+    Message:
+      type: object
+      properties:
+        message_id: {type: string}
+        sender: {type: string, enum: [you, investigator]}
+        text: {type: string}
+        at: {type: string, format: date-time}
+    Invitation:
+      type: object
+      properties:
+        invitation_id: {type: string}
+        context: {type: string}
+        response: {type: [string, 'null'], enum: [accept, decline, null]}
+    EventCheck:
+      type: object
+      properties:
+        seq: {type: integer}
+        event_type: {type: string}
+        at: {type: string}
+        commitment_ok: {type: boolean}
+        chain_ok: {type: boolean}
+        content_ok: {type: [boolean, 'null']}
+        anchored_by: {type: [integer, 'null']}
+        status: {type: string, enum: [verified, pending_anchor, tampered, chain_broken, anchor_mismatch]}
+    Receipt:
+      type: object
+      properties:
+        seq: {type: integer}
+        event_type: {type: string}
+        at: {type: string}
+        commitment: {type: string}
+        entry_hash: {type: string}
+        anchor_seq: {type: [integer, 'null']}
+        anchor_tx: {type: [string, 'null']}
+        explorer_url: {type: [string, 'null']}
+
+paths:
+  /health:
+    get:
+      summary: Liveness and chain mode (offline | live)
+      responses: {'200': {description: OK}}
+  /categories:
+    get:
+      summary: Report categories and challenge reasons
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories: {type: array, items: {type: string}}
+                  challenge_reasons: {type: array, items: {type: string}}
+
+  /zk/enroll:
+    post:
+      summary: Add this phone's identity commitment to the Semaphore group (once per employee)
+      security: [{enrollCode: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commitment]
+              properties:
+                commitment: {$ref: '#/components/schemas/DecimalString'}
+      responses:
+        '200':
+          description: Enrolled (an Amoy tx; takes a few seconds)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index: {type: integer}
+                  root: {$ref: '#/components/schemas/DecimalString'}
+                  tx_hash: {type: string}
+        '403': {description: 'bad_enroll_code'}
+        '409': {description: 'already_enrolled'}
+  /zk/group:
+    get:
+      summary: Group members (ordered) and roots, to build the Merkle group on the phone
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group_id: {type: integer}
+                  depth: {type: integer, const: 16}
+                  members: {type: array, items: {$ref: '#/components/schemas/DecimalString'}}
+                  root: {$ref: '#/components/schemas/DecimalString'}
+                  onchain_root: {$ref: '#/components/schemas/DecimalString'}
+  /zk/scopes/complaint:
+    get:
+      summary: Today's complaint scope (UTC)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scope_text: {type: string}
+                  sdk_argument: {type: string, description: Pass to generateSemaphoreProof(scope:)}
+                  valid_scope_texts: {type: array, items: {type: string}}
+  /zk/scopes/challenge:
+    get:
+      summary: Scope for challenging one committee member on one case
+      parameters:
+        - {name: case_id, in: query, required: true, schema: {type: string}}
+        - {name: member_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scope_text: {type: string}
+                  sdk_argument: {type: string}
+
+  /classify:
+    post:
+      summary: Category suggestions for a draft (stateless; nothing stored or logged). M3 replaces the stub model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category: {type: string}
+                        score: {type: number}
+                  model: {type: string}
+                  retained: {type: boolean, const: false}
+
+  /reports:
+    post:
+      summary: Submit an anonymous report with a ZK membership proof
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload, proof]
+              properties:
+                payload: {type: string, description: JSON string of ReportPayload}
+                proof: {$ref: '#/components/schemas/Proof'}
+      responses:
+        '201':
+          description: Accepted (proof validated on-chain; takes a few seconds)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id: {type: string}
+                  case_token: {type: string, description: Shown once. Store in secure storage.}
+                  status: {type: string}
+                  proof_tx: {type: string}
+                  explorer_url: {type: string}
+        '400': {description: Proof rejected (reason codes above)}
+        '422': {description: 'bad_payload | unknown_category'}
+  /reports/{case_id}:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: The reporter's view of their case
+      security: [{caseToken: []}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CaseView'}
+        '401': {description: missing_case_token}
+        '404': {description: case_not_found (also for a wrong token)}
+  /reports/{case_id}/evidence:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Upload one evidence file (max 5 per case, 20 MB each). Sealed into the Silent Audit on upload.
+      security: [{caseToken: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        '201':
+          description: Stored and sealed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EvidenceView'}
+        '413': {description: 'too_many_files | file_too_large'}
+  /reports/{case_id}/challenge:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Committee Challenge, anonymous and proof-backed (one per member per case)
+      security: [{caseToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload, proof]
+              properties:
+                payload: {type: string, description: JSON string of ChallengePayload}
+                proof: {$ref: '#/components/schemas/Proof'}
+      responses:
+        '201':
+          description: Filed; independent review pending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id: {type: string}
+                  member_id: {type: string}
+                  status: {type: string}
+                  proof_tx: {type: string}
+                  explorer_url: {type: string}
+        '400': {description: Proof rejected}
+        '422': {description: 'bad_payload | unknown_member | unknown_reason'}
+  /reports/{case_id}/messages:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Anonymous investigation inbox, oldest first
+      security: [{caseToken: []}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Message'}}
+    post:
+      summary: Send a message to the investigation team
+      security: [{caseToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, maxLength: 5000}
+      responses:
+        '201':
+          description: Sent
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Message'}
+
+  /witness-invitations:
+    get:
+      summary: Invitations for this witness code
+      security: [{witnessCode: []}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Invitation'}}
+  /witness-invitations/{invitation_id}/respond:
+    parameters: [{name: invitation_id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Accept or decline (once)
+      security: [{witnessCode: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response: {type: string, enum: [accept, decline]}
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Invitation'}
+        '409': {description: already_responded}
+
+  /audit/cases/{case_id}/verify:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Silent Audit check, recomputed from storage and compared with Polygon
+      security: [{caseToken: []}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id: {type: string}
+                  ok: {type: boolean}
+                  first_bad_seq: {type: [integer, 'null']}
+                  events: {type: array, items: {$ref: '#/components/schemas/EventCheck'}}
+                  anchors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        seq: {type: integer}
+                        onchain_head: {type: string}
+                        recomputed_head: {type: [string, 'null']}
+                        ok: {type: boolean}
+                        tx_hash: {type: [string, 'null']}
+  /audit/cases/{case_id}/receipts:
+    parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: One receipt per audit event, with the anchoring Polygon tx
+      security: [{caseToken: []}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Receipt'}}

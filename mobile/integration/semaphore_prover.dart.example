@@ -1,0 +1,52 @@
+// Real ZK prover on the Semaphore Flutter SDK. Kept outside lib/ (as .example) until the `semaphore` package
+// builds on your machine; see docs/chain/m1-integration.md. Then:
+//   1. copy to lib/integration/semaphore_prover.dart
+//   2. call `await RustLib.init();` in main() before runApp
+//   3. override zkProverProvider:  zkProverProvider.overrideWith((ref) => SemaphoreProver(ref.watch(identityKeyProvider)))
+//
+// Encodings verified against Semaphore V4 on an Amoy fork with semaphore-protocol 0.1.0 (the Rust engine inside
+// this SDK): commitments match @semaphore-protocol/core, message/scope text encoding matches the backend, and the
+// exported proof JSON is accepted by POST /reports unchanged.
+// The SDK exposes these classes only under lib/src.
+// ignore_for_file: implementation_imports
+import 'dart:convert';
+
+import 'package:semaphore/src/rust/third_party/semaphore_bindings/group.dart';
+import 'package:semaphore/src/rust/third_party/semaphore_bindings/identity.dart';
+import 'package:semaphore/src/rust/third_party/semaphore_bindings/proof.dart';
+
+import 'signals.dart';
+import 'zk_prover.dart';
+
+class SemaphoreProver implements ZkProver {
+  SemaphoreProver(this._key);
+  final IdentityKey _key;
+  Identity? _identity;
+
+  Future<Identity> _id() async => _identity ??= await Identity.newInstance(privateKey: await _key.load());
+
+  @override
+  Future<String> commitment() async => (await _id()).commitment();
+
+  @override
+  Future<Map<String, dynamic>> prove({
+    required List<String> members,
+    required String onchainRoot,
+    required String message,
+    required String scope,
+  }) async {
+    final group = await Group.newInstance(members: members.map(commitmentToElement).toList());
+    final root = await group.root();
+    final local = root == null ? '0' : elementToDecimal(root);
+    if (local != onchainRoot) throw GroupRootMismatch(local, onchainRoot);
+    // First call downloads the depth-16 zkey from snark-artifacts.pse.dev, so the phone needs internet.
+    final json = await generateSemaphoreProof(
+      identity: await (await _id()).toArc(),
+      group: await group.toArc(),
+      message: message,
+      scope: scope,
+      merkleTreeDepth: 16,
+    );
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+}
