@@ -50,9 +50,23 @@ class ReporterZk {
   }
 
   /// POST /reports/{id}/challenge with a proof scoped to (case, member): one challenge per member per case.
-  Future<Json> challenge(String caseId, String caseToken, Map<String, Object?> challenge) async {
+  Future<Json> challenge(
+    String caseId,
+    String caseToken,
+    Map<String, Object?> challenge,
+  ) async {
     final payload = jsonEncode(challenge);
-    final scope = (await _api.challengeScope(caseId, challenge['member_id']! as String))['sdk_argument'] as String;
-    return _api.challenge(caseId, caseToken, payload, await _proof(payload, scope));
+    final scope =
+        (await _api.challengeScope(
+              caseId,
+              challenge['member_id']! as String,
+            ))['sdk_argument']
+            as String;
+    return _api.challenge(
+      caseId,
+      caseToken,
+      payload,
+      await _proof(payload, scope),
+    );
   }
 }

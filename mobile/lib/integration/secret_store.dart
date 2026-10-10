@@ -13,12 +13,14 @@ abstract interface class SecretStore {
 }
 
 class SecureSecretStore implements SecretStore {
-  SecureSecretStore([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  SecureSecretStore([FlutterSecureStorage? storage])
+    : _s = storage ?? const FlutterSecureStorage();
   final FlutterSecureStorage _s;
   @override
   Future<String?> read(String key) => _s.read(key: key);
   @override
-  Future<void> write(String key, String value) => _s.write(key: key, value: value);
+  Future<void> write(String key, String value) =>
+      _s.write(key: key, value: value);
   @override
   Future<void> delete(String key) => _s.delete(key: key);
 }

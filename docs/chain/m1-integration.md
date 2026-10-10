@@ -50,36 +50,38 @@ App URL: the emulator reaches the laptop at `http://10.0.2.2:8000` (the default)
 Wi-Fi: `--dart-define=API_BASE_URL=http://<laptop LAN IP>:8000`. The debug manifest now allows plain HTTP;
 release builds stay HTTPS-only.
 
-## 2. Switch the app to live (M1, about 30 minutes)
+## 2. Live mode in the app (done)
 
-1. **Repository**, in `lib/data/repository.dart`:
-   ```dart
-   import '../integration/live_providers.dart';
-   final repositoryProvider = Provider<EmployeeRepository>(
-     (ref) => demoEnabled ? DemoRepository() : ref.watch(liveRepositoryProvider));
-   ```
-   Run with `--dart-define=APP_MODE=live`.
-2. **Enrolment.** In `VerificationScreen`, ask for the invite code, then
-   `await ref.read(reporterZkProvider).enroll(code)`. Use `isEnrolled()` to skip this screen next time.
-   Errors: `ApiFailure.reason == 'bad_enroll_code'`.
-3. **Evidence upload.** In `create_report.dart` line ~101, pass paths instead of names:
-   `files.map((f) => f.path ?? f.name).toList()`. Story attachments already carry paths.
-4. **Witness code entry.** Add a field somewhere (Inbox or Settings) that calls
-   `ref.read(caseVaultProvider).setWitnessCode(code)`. Then `invitations()` returns real invitations.
-5. **Copy and wording.** Live strings to change: "demo" labels; `Challenge.status` is a const `'Submitted — demo'`
-   in the model (make it a field); `Note.date` is always `now()` (add a date parameter if you want message
-   timestamps; the API returns `at`).
-6. **Errors to show to the user** (`ApiFailure.reason`):
-   - `replay` on a report: "You've already filed a report today." One report per phone per UTC day, by design
-     (the daily scope's nullifier).
-   - `replay` on a challenge: "You've already challenged this member."
-   - `NotEnrolled`: send the user to enrolment.
-   - `network_error`: offline, retry.
-   - `GroupRootMismatch` (live only): refresh and retry. It means someone enrolled mid-proof.
-7. **Clear session.** Also call `ref.read(caseVaultProvider).clear()` if "clear session" should forget cases.
-   Leave the identity key alone: deleting it means the phone must be re-enrolled.
+Run with `--dart-define=APP_MODE=live` (plus `API_BASE_URL` for a real phone). Demo mode is unchanged and still the
+default, so M1's existing tests and copy are untouched; `modeText(demo, live)` picks the wording.
 
-Proof calls take about 2–6 s in live mode (an Amoy transaction). Show "Verifying on-chain…".
+| Area | Live behaviour |
+|---|---|
+| Data | `repositoryProvider` uses `LiveRepository` when `APP_MODE=live` |
+| Enrolment | `VerificationScreen` asks for the HR invite code and enrols; an already-enrolled phone just continues |
+| Report form | Evidence files upload by path after acceptance and are sealed; "Submit anonymously" |
+| Tell Your Story | Same submission path; attachments upload |
+| Challenge | Lists the case's real committee (name + role) from the API; status shows the reviewer's outcome |
+| Inbox | "Check for replies" pulls investigator messages; message times come from the server |
+| Witness | Enter the code from the investigator in Inbox → "Show my invitations"; accept/decline is recorded |
+| Silent Audit | Real verification states ("Verified on Polygon", failures in orange) with Polygonscan links |
+| Settings | "Forget my cases on this phone" clears case tokens (membership stays) |
+| Errors | `friendlyError()` maps API reasons (replay, bad code, network, …) to plain text |
+
+Still demo-only: the "Tell Your Story" category suggestions are fixed examples (the API has `POST /classify` for
+M3's model), and real ZK proofs need the WebView prover (section 3); until then live mode uses `OfflineProver`,
+which only the stub's `CHAIN_MODE=offline` accepts.
+
+Tests: `flutter test` (demo, 14 pass); `flutter test test/integration/live_ui_test.dart --dart-define=APP_MODE=live`
+(live screens, fake API); `flutter test test/integration --dart-define=INCOGNITO_STUB_URL=http://127.0.0.1:8010`
+(full journey against a running offline stub, including an HR reply reaching the phone).
+
+## HR dashboard (M2)
+
+`web/` calls the stub's `/hr/*` API by default (set `VITE_STUB_ADMIN_KEY` to the stub's `STUB_ADMIN_KEY`, default
+`adm`); access rules are enforced by the server, and the mock answers only if the backend is unreachable
+(`VITE_FORCE_MOCK=true` forces it). The persona switcher sets `X-Staff-Id`. The Investigation Inbox is the
+investigator's side of the reporter's chat; Email Notices were removed.
 
 ## 3. The Semaphore SDK spike (real ZK on the phone)
 

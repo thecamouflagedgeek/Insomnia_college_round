@@ -161,6 +161,7 @@ components:
         anchor_seq: {type: [integer, 'null']}
         anchor_tx: {type: [string, 'null']}
         explorer_url: {type: [string, 'null']}
+        anchor_block: {type: [integer, 'null']}
 
 paths:
   /health:

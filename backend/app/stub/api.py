@@ -13,8 +13,8 @@ from app.chain.routes import complaint_scope_texts
 from app.chain.semaphore import ProofIn
 from app.chain.signals import challenge_scope_text
 from app.chain.zk_service import ProofRejected
-from app.stub.store import COMMITTEE, Case, ChallengeRec, Evidence, Invitation, Message, StubStore, new_id, now, \
-    token_hash
+from app.stub.store import COMMITTEE, DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, Evidence, Invitation, \
+    Message, StubStore, committee_entry, new_id, now, token_hash
 
 MAX_EVIDENCE_FILES = 5
 MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
@@ -150,6 +150,43 @@ def _add_message(request: Request, case: Case, sender: str, text: str) -> Messag
     return msg
 
 
+def add_message(request: Request, case: Case, sender: str, text: str) -> Message:
+    return _add_message(request, case, sender, text)
+
+
+def decide_challenge(request: Request, case: Case, ch: ChallengeRec, decision: str, reviewer_id: str,
+                     rationale: str | None = None, replacement_id: str = DEFAULT_REPLACEMENT) -> None:
+    """decision: upheld | rejected. Upheld revokes the challenged member's access and seats a replacement."""
+    if ch.status != "pending_review":
+        raise HTTPException(409, {"reason": "already_decided"})
+    ch.status, ch.reviewer_id, ch.rationale, ch.decided_at = decision, reviewer_id, rationale, now()
+    audit = _chain(request).audit
+    audit.record(case.case_id, "challenge_decided",
+                 {"challenge_id": ch.challenge_id, "decision": decision, "reviewer_id": reviewer_id})
+    if decision == "upheld":
+        old = ch.member_id
+        if replacement_id not in STAFF or replacement_id in {m["member_id"] for m in case.committee}:
+            replacement_id = next(i for i, s in STAFF.items() if s["role"] == "committee_member"
+                                  and i not in {m["member_id"] for m in case.committee} and i != old)
+        case.committee = [m for m in case.committee if m["member_id"] != old] + [committee_entry(replacement_id)]
+        if old not in case.revoked_ids:
+            case.revoked_ids.append(old)
+        audit.record(case.case_id, "member_replaced", {"old_member_id": old, "new_member_id": replacement_id})
+        audit.record(case.case_id, "access_revoked", {"member_id": old})
+
+
+def create_invitation(request: Request, case: Case, context: str, alias: str) -> tuple[Invitation, str]:
+    store = _store(request)
+    code = secrets.token_urlsafe(9)
+    inv = Invitation(new_id("WIT"), case.case_id, token_hash(code), context, alias=alias, invited_at=now())
+    first = not any(i.case_id == case.case_id for i in store.invitations.values())
+    store.invitations[inv.invitation_id] = inv
+    if first:
+        _chain(request).audit.record(case.case_id, "witness_quorum_started",
+                                     {"quorum_id": f"WQ-{case.case_id}", "invited_count": 1})
+    return inv, code
+
+
 # ---- routers ---------------------------------------------------------------------------------------------------
 
 def build_api_router() -> APIRouter:
@@ -189,7 +226,8 @@ def build_api_router() -> APIRouter:
         token = secrets.token_urlsafe(32)
         with store.lock:
             case_id = new_id("INC")
-            case = Case(case_id, token_hash(token), body.payload, "submitted", now())
+            case = Case(case_id, token_hash(token), body.payload, "submitted", now(),
+                        nullifier=str(ok.nullifier), proof_tx=ok.tx_hash)
             store.cases[case_id] = case
             audit.record(case_id, "complaint_submitted", {
                 "content_sha256": content_sha256(body.payload.encode("utf-8")),
@@ -279,7 +317,7 @@ def build_api_router() -> APIRouter:
         if inv.response is not None:
             raise HTTPException(409, {"reason": "already_responded"})
         with store.lock:
-            inv.response = body.response
+            inv.response, inv.responded_at = body.response, now()
             same = [i for i in store.invitations.values() if i.case_id == inv.case_id]
             _chain(request).audit.record(inv.case_id, "witness_response_recorded", {
                 "quorum_id": f"WQ-{inv.case_id}",
@@ -355,31 +393,16 @@ def build_admin_router() -> APIRouter:
             ch = next((c for c in case.challenges if c.challenge_id == challenge_id), None)
             if ch is None:
                 raise HTTPException(404, {"reason": "challenge_not_found"})
-            ch.status = body.decision
-            _chain(request).audit.record(case_id, "challenge_decided", {
-                "challenge_id": challenge_id, "decision": body.decision, "reviewer_id": "REV-DEMO"})
-            if body.decision == "upheld":
-                old = ch.member_id
-                new = {"member_id": f"cm-r{len(case.committee)}", "name": "Replacement member",
-                       "role": "Member"}
-                case.committee = [m for m in case.committee if m["member_id"] != old] + [new]
-                _chain(request).audit.record(case_id, "member_replaced",
-                                             {"old_member_id": old, "new_member_id": new["member_id"]})
+            decide_challenge(request, case, ch, body.decision, "usr_aris")
             store.save()
         return case_view(case)
 
     @r.post("/witness-invitations", status_code=201)
     def invite(request: Request, body: InviteIn):
         store = _store(request)
-        _case(request, body.case_id)
-        code = secrets.token_urlsafe(9)
+        case = _case(request, body.case_id)
         with store.lock:
-            inv = Invitation(new_id("WIT"), body.case_id, token_hash(code), body.context)
-            first = not any(i.case_id == body.case_id for i in store.invitations.values())
-            store.invitations[inv.invitation_id] = inv
-            if first:
-                _chain(request).audit.record(body.case_id, "witness_quorum_started",
-                                             {"quorum_id": f"WQ-{body.case_id}", "invited_count": 1})
+            inv, code = create_invitation(request, case, body.context, "Witness")
             store.save()
         return {"invitation_id": inv.invitation_id, "witness_code": code}
 

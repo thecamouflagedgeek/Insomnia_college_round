@@ -16,6 +16,12 @@ const _statusLabels = {
   'closed': 'Closed',
 };
 
+const _challengeLabels = {
+  'pending_review': 'Submitted · independent review pending',
+  'upheld': 'Upheld · member replaced',
+  'rejected': 'Reviewed · assignment maintained',
+};
+
 const _eventTitles = {
   'complaint_submitted': 'Report recorded',
   'evidence_sealed': 'Evidence sealed',
@@ -71,18 +77,39 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       description: view['description'] as String,
       date: DateTime.parse(incident ?? view['created_at'] as String),
       dateIsIncident: incident != null,
-      files: [for (final e in view['evidence'] as List) (e as Json)['name'] as String],
+      files: [
+        for (final e in view['evidence'] as List) (e as Json)['name'] as String,
+      ],
       suggestedCategories: List<String>.from(view['categories'] as List),
+      committee: [
+        for (final m in committee)
+          CommitteeMember(
+            m['member_id'] as String,
+            m['name'] as String,
+            m['role'] as String,
+          ),
+      ],
     );
     report.status = _statusLabels[view['status']] ?? view['status'] as String;
     for (final c in (view['challenges'] as List).cast<Json>()) {
-      report.challenges.add(Challenge(names[c['member_id']] ?? c['member_id'] as String, c['reason'] as String, ''));
+      report.challenges.add(
+        Challenge(
+          names[c['member_id']] ?? c['member_id'] as String,
+          c['reason'] as String,
+          '',
+          status: _challengeLabels[c['status']] ?? c['status'] as String,
+        ),
+      );
     }
     report.messages
       ..clear()
       ..addAll([
         for (final m in messages.cast<Json>())
-          Note(m['sender'] == 'you' ? 'You' : 'Investigation team', m['text'] as String),
+          Note(
+            m['sender'] == 'you' ? 'You' : 'Investigation team',
+            m['text'] as String,
+            DateTime.parse(m['at'] as String).toLocal(),
+          ),
       ]);
     return report;
   }
@@ -100,34 +127,47 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     return out.reversed.toList();
   }
 
-  Future<Report> _submit(Map<String, Object?> payload, Iterable<({String path, String name})> files) async {
-    final created = await _zk.submitReport({...payload, 'client_nonce': randomNonce()});
-    final caseId = created['case_id'] as String, token = created['case_token'] as String;
+  Future<Report> _submit(
+    Map<String, Object?> payload,
+    Iterable<({String path, String name})> files,
+  ) async {
+    final created = await _zk.submitReport({
+      ...payload,
+      'client_nonce': randomNonce(),
+    });
+    final caseId = created['case_id'] as String,
+        token = created['case_token'] as String;
     await _vault.add(caseId, token);
     for (final f in files) {
-      if (File(f.path).existsSync()) await _api.uploadEvidence(caseId, token, f.path, f.name);
+      if (File(f.path).existsSync()) {
+        await _api.uploadEvidence(caseId, token, f.path, f.name);
+      }
     }
     return _load(caseId, token);
   }
 
   /// [files] are file paths. (CreateReportScreen currently passes names; pass `f.path ?? f.name` to upload.)
   @override
-  Future<Report> submit(String category, String title, String description, DateTime date, List<String> files) =>
-      _submit(
-        {
-          'category': category,
-          'categories': [category],
-          'title': title,
-          'description': description,
-          'incident_date': DateFormat('yyyy-MM-dd').format(date),
-        },
-        files.map((p) => (path: p, name: p.split(Platform.pathSeparator).last)),
-      );
+  Future<Report> submit(
+    String category,
+    String title,
+    String description,
+    DateTime date,
+    List<String> files,
+  ) => _submit({
+    'category': category,
+    'categories': [category],
+    'title': title,
+    'description': description,
+    'incident_date': DateFormat('yyyy-MM-dd').format(date),
+  }, files.map((p) => (path: p, name: p.split(Platform.pathSeparator).last)));
 
   @override
   Future<Report> submitStory(StorySubmission submission) => _submit(
     {
-      'category': submission.suggestedCategories.isEmpty ? 'Uncertain' : submission.suggestedCategories.first,
+      'category': submission.suggestedCategories.isEmpty
+          ? 'Uncertain'
+          : submission.suggestedCategories.first,
       'categories': submission.suggestedCategories,
       'title': 'Your story',
       'description': submission.narrative,
@@ -139,12 +179,34 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     ],
   );
 
-  /// [member] is the committee member's display name as shown by ChallengeScreen.
+  /// Re-reads a case into [report] in place (new investigator messages, challenge outcomes, committee changes).
+  Future<void> refresh(Report report) async {
+    final fresh = await _load(report.id, await _token(report.id));
+    report.status = fresh.status;
+    report.messages
+      ..clear()
+      ..addAll(fresh.messages);
+    report.challenges
+      ..clear()
+      ..addAll(fresh.challenges);
+    report.committee
+      ..clear()
+      ..addAll(fresh.committee);
+  }
+
+  /// [member] is the committee member's display name (or id) as shown by ChallengeScreen.
   @override
-  Future<void> challenge(Report report, String member, String reason, String explanation) async {
+  Future<void> challenge(
+    Report report,
+    String member,
+    String reason,
+    String explanation,
+  ) async {
     final token = await _token(report.id);
     if (!_committees.containsKey(report.id)) await _load(report.id, token);
-    final match = _committees[report.id]!.where((m) => m['name'] == member || m['member_id'] == member);
+    final match = _committees[report.id]!.where(
+      (m) => m['name'] == member || m['member_id'] == member,
+    );
     if (match.isEmpty) throw ApiFailure('unknown_member');
     await _zk.challenge(report.id, token, {
       'member_id': match.first['member_id'],
@@ -152,7 +214,14 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       'explanation': explanation,
       'client_nonce': randomNonce(),
     });
-    report.challenges.add(Challenge(member, reason, explanation));
+    report.challenges.add(
+      Challenge(
+        member,
+        reason,
+        explanation,
+        status: _challengeLabels['pending_review']!,
+      ),
+    );
   }
 
   @override
@@ -167,7 +236,8 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     if (code == null) return [];
     return [
       for (final i in (await _api.invitations(code)).cast<Json>())
-        Invitation(i['invitation_id'] as String, i['context'] as String)..response = i['response'] as String?,
+        Invitation(i['invitation_id'] as String, i['context'] as String)
+          ..response = i['response'] as String?,
     ];
   }
 
@@ -176,7 +246,9 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
   Future<void> respond(Invitation invitation, String response) async {
     final code = await _vault.witnessCode();
     if (code == null) throw ApiFailure('missing_witness_code');
-    final value = response.toLowerCase().startsWith('accept') ? 'accept' : 'decline';
+    final value = response.toLowerCase().startsWith('accept')
+        ? 'accept'
+        : 'decline';
     final out = await _api.respond(code, invitation.id, value);
     invitation.response = out['response'] as String;
   }
@@ -185,7 +257,10 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
   Future<List<AuditEvent>> audit(Report report) async {
     final token = await _token(report.id);
     final verification = await _api.verify(report.id, token);
-    final receipts = {for (final r in (await _api.receipts(report.id, token)).cast<Json>()) r['seq']: r};
+    final receipts = {
+      for (final r in (await _api.receipts(report.id, token)).cast<Json>())
+        r['seq']: r,
+    };
     return [
       for (final e in (verification['events'] as List).cast<Json>())
         AuditEvent(

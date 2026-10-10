@@ -15,6 +15,7 @@ from app.chain.routes import build_router
 from app.chain.services import start_anchorer
 from app.stub.api import build_admin_router, build_api_router
 from app.stub.chain import build_stub_services
+from app.stub.hr import build_hr_router
 from app.stub.store import StubStore
 
 _OFFLINE_DEFAULTS = {"AMOY_RPC_URL": "offline", "RELAYER_PRIVATE_KEY": "0x" + "0" * 63 + "1",
@@ -71,6 +72,7 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     app.include_router(build_api_router())
     if app.state.admin_key:
         app.include_router(build_admin_router())
+        app.include_router(build_hr_router())
     return app
 
 

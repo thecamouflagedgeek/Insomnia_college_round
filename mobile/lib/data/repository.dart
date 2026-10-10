@@ -1,4 +1,5 @@
 import '../features/story/story_state.dart';
+import '../integration/live_providers.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -14,12 +15,14 @@ class Report {
     this.files = const [],
     this.suggestedCategories = const [],
     this.dateIsIncident = true,
-  });
+    List<CommitteeMember>? committee,
+  }) : committee = committee ?? List.of(demoCommittee);
   final String id, category, title, description;
   final DateTime date;
   final List<String> files;
   final List<String> suggestedCategories;
   final bool dateIsIncident;
+  final List<CommitteeMember> committee;
   String status = 'Committee assigned';
   final List<Challenge> challenges = [];
   final List<Note> messages = [
@@ -30,14 +33,31 @@ class Report {
   ];
 }
 
+class CommitteeMember {
+  const CommitteeMember(this.id, this.name, this.role);
+  final String id, name, role;
+}
+
+const demoCommittee = [
+  CommitteeMember('demo-a', 'Committee member A', 'Member'),
+  CommitteeMember('demo-b', 'Committee member B', 'Member'),
+  CommitteeMember('demo-c', 'Committee member C', 'Member'),
+];
+
 class Challenge {
-  Challenge(this.member, this.reason, this.explanation);
+  Challenge(
+    this.member,
+    this.reason,
+    this.explanation, {
+    this.status = 'Submitted — demo',
+  });
   final String member, reason, explanation;
-  final String status = 'Submitted — demo';
+  final String status;
 }
 
 class Note {
-  Note(this.sender, this.text) : date = DateTime.now();
+  Note(this.sender, this.text, [DateTime? date])
+    : date = date ?? DateTime.now();
   final String sender, text;
   final DateTime date;
 }
@@ -228,7 +248,7 @@ class ApiService {
 }
 
 final repositoryProvider = Provider<EmployeeRepository>(
-  (ref) => DemoRepository(),
+  (ref) => demoEnabled ? DemoRepository() : ref.watch(liveRepositoryProvider),
 );
 final reportsProvider = FutureProvider(
   (ref) => ref.watch(repositoryProvider).reports(),
@@ -245,6 +265,7 @@ class Session extends Notifier<bool> {
   @override
   bool build() => false;
   void enterDemo() => state = true;
+  void enter() => state = true;
   void clear() => state = false;
 }
 
@@ -253,3 +274,6 @@ bool get demoEnabled =>
     ? const String.fromEnvironment('APP_MODE') == 'demo'
     : (dotenv.isInitialized ? dotenv.env['APP_MODE'] ?? 'demo' : 'demo') ==
           'demo';
+
+/// Demo wording keeps the labelled-demo copy (and its tests); live wording describes what really happens.
+String modeText(String demo, String live) => demoEnabled ? demo : live;
