@@ -1,5 +1,17 @@
 # Blockchain / ZK demo runbook (Member 4)
 
+## Live deployment (Polygon Amoy, chain 80002)
+
+| What | Value |
+|---|---|
+| Relayer / group admin / anchorer | `0x39b2bD9272D785BC0Ef2d047DC505DbB30d3EF23` |
+| CaseAuditRegistry | [`0x20DeEc5fb1Ba77fe8e9c67a5C8822b17c094bD1e`](https://amoy.polygonscan.com/address/0x20DeEc5fb1Ba77fe8e9c67a5C8822b17c094bD1e) (deploy tx [`0x1eae23…a2a3f`](https://amoy.polygonscan.com/tx/0x1eae23a667531f96def2fe088d4a8d111cca23f19f457d8da34f74b29cea2a3f)) |
+| Semaphore V4 | [`0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D`](https://amoy.polygonscan.com/address/0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D) |
+| Semaphore group ID | `23` |
+
+Amoy rejects a priority fee below 25 gwei. The backend uses `MIN_PRIORITY_GWEI=30`. For `forge script`, pass
+`--priority-gas-price 30gwei --with-gas-price 60gwei`.
+
 ## One-time setup (before the hackathon clock gets tight)
 
 1. `cast wallet new`, then put the key and address in `.env` (`RELAYER_PRIVATE_KEY`, `RELAYER_ADDRESS`). Fund it with Amoy POL
@@ -7,7 +19,7 @@
 2. Get an **Alchemy** Amoy RPC URL. Public RPCs (publicnode) work for live use but prune old state within minutes, so
    they cannot back an Anvil fork for long.
 3. Deploy the registry:
-   `cd blockchain && forge script script/Deploy.s.sol --rpc-url "$AMOY_RPC_URL" --private-key "$RELAYER_PRIVATE_KEY" --broadcast`
+   `cd blockchain && forge script script/Deploy.s.sol --rpc-url "$AMOY_RPC_URL" --private-key "$RELAYER_PRIVATE_KEY" --broadcast --priority-gas-price 30gwei --with-gas-price 60gwei`
    Then set `REGISTRY_ADDRESS`.
 4. Create the group: `PYTHONPATH=backend .venv/bin/python scripts/create_group.py`, then set `SEMAPHORE_GROUP_ID`.
 5. Apply `backend/migrations/0040_chain.sql` in the Supabase SQL editor.
