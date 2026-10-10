@@ -1,0 +1,6 @@
+web3==7.*
+psycopg[binary]==3.2.*
+pydantic==2.*
+fastapi
+httpx
+pytest

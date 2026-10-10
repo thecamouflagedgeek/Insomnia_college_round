@@ -1,0 +1,8 @@
+{
+  "name": "incognito-proofgen",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@semaphore-protocol/core": "^4.0.0"
+  }
+}
