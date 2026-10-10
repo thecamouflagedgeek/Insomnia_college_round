@@ -1,0 +1,88 @@
+{
+  "health": {
+    "status": "ok",
+    "environment": "development",
+    "database": {"configured": false, "schema_verified": false, "writes_enabled": false},
+    "complaint_submissions_enabled": false,
+    "note": "Synthetic/local API readiness only; no production data operations are enabled."
+  },
+  "health_test_mode": {
+    "status": "ok",
+    "environment": "test",
+    "database": {"configured": true, "schema_verified": true, "writes_enabled": true, "mode": "test"},
+    "complaint_submissions_enabled": true,
+    "note": "Test mode with in-memory adapter; no production data operations."
+  },
+  "report_submission_unavailable": {
+    "detail": {
+      "code": "integration_unavailable",
+      "message": "Supabase service credentials are not configured"
+    }
+  },
+  "report_submission_success": {
+    "reference": "INC-abc123def456",
+    "status": "submitted",
+    "blockchain_status": "pending"
+  },
+  "report_status_unavailable": {
+    "detail": {
+      "code": "integration_unavailable",
+      "message": "Status lookup requires verified reports schema"
+    }
+  },
+  "report_status_found": {
+    "reference": "INC-abc123def456",
+    "status": "submitted",
+    "created_at": null
+  },
+  "unauthorized": {
+    "detail": {"code": "unauthorized", "message": "Valid authentication is required"}
+  },
+  "forbidden": {
+    "detail": {"code": "forbidden", "message": "Insufficient permissions"}
+  },
+  "invalid_evidence": {
+    "detail": {"code": "invalid_evidence", "message": "File must be non-empty and within size limit"}
+  },
+  "evidence_validated": {
+    "validated": true,
+    "filename": "note.txt",
+    "content_type": "text/plain",
+    "size": 14,
+    "sha256": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+    "message": "Evidence validated; private Storage upload requires verified schema and report authorization"
+  },
+  "witness_invitation_created": {
+    "status": "invitation_created",
+    "invitation_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "message_sent": {
+    "message_id": "550e8400-e29b-41d4-a716-446655440000",
+    "created_at": "1700000000"
+  },
+  "challenge_created": {
+    "challenge_id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "pending"
+  },
+  "challenge_decided": {
+    "challenge_id": "550e8400-e29b-41d4-a716-446655440000",
+    "decision": "accepted"
+  },
+  "audit_timeline": {
+    "events": [
+      {"action": "created", "report": "INC-abc123", "timestamp": 1700000000},
+      {"action": "viewed", "report": "INC-abc123", "timestamp": 1700000001}
+    ],
+    "verified": true,
+    "count": 2
+  },
+  "development_blockchain_status": {
+    "status": "pending",
+    "mode": "development_stub",
+    "evidence": null
+  },
+  "notification_status": {
+    "delivery_configured": false,
+    "mode": "development_stub"
+  }
+}

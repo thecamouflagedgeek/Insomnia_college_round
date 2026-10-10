@@ -1,9 +1,17 @@
+# Chain / ZK / Silent Audit (M4)
 web3==7.*
 psycopg[binary]==3.2.*
-pydantic==2.*
-fastapi
-httpx
-pytest
-uvicorn
-python-multipart
-pyyaml
+# API + services (M3 minimums; exact pins break on Python 3.14)
+fastapi>=0.115.12
+uvicorn[standard]>=0.34.2
+pydantic>=2.11.4
+pydantic-settings>=2.9.1
+python-multipart>=0.0.20
+supabase>=2.15.1
+cryptography>=44.0.3
+PyJWT>=2.10.1
+reportlab>=4.4.1
+PyYAML>=6.0.2
+# tests
+pytest>=8.3.5
+httpx>=0.28.1
