@@ -23,8 +23,7 @@ const PAGE_NAMES: Record<NavPage, string> = {
   committee: 'Committee Management',
   witness: 'Witness Quorum',
   inbox: 'Investigation Inbox',
-  repeat_allegations: 'Pattern Intelligence',
-  email_notices: 'Controlled Notices'
+  repeat_allegations: 'Pattern Intelligence'
 };
 
 export function Navbar({

@@ -13,7 +13,6 @@ import { CommitteeManagement } from './pages/CommitteeManagement';
 import { WitnessQuorumPage } from './pages/WitnessQuorumPage';
 import { InvestigationInboxPage } from './pages/InvestigationInboxPage';
 import { RepeatAllegations } from './pages/RepeatAllegations';
-import { EmailNotices } from './pages/EmailNotices';
 
 function AppContent() {
   const { currentUser } = useAuth();
@@ -66,8 +65,6 @@ function AppContent() {
         return <InvestigationInboxPage />;
       case 'repeat_allegations':
         return <RepeatAllegations />;
-      case 'email_notices':
-        return <EmailNotices />;
       default:
         return <Dashboard onNavigate={handleNavigate} />;
     }

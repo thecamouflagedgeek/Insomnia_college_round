@@ -4,10 +4,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { MessageSquare, Send, ShieldCheck, Lock, AlertCircle } from 'lucide-react';
 
 interface InvestigationInboxProps {
-  complaintId?: string;
+  complaintId: string;
 }
 
-export function InvestigationInbox({ complaintId = 'INC-892' }: InvestigationInboxProps) {
+export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState<Array<{ id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean }>>([]);
   const [inputText, setInputText] = useState('');

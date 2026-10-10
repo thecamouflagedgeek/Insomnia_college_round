@@ -67,7 +67,12 @@ export async function checkBackendHealth(baseUrl: string): Promise<boolean> {
 export class ApiService {
   private static user: User = DEMO_USERS[0]; // Default Sarah Jenkins
   private static apiBaseUrl: string = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  private static forceMock: boolean = true; // Safe default for judging demo
+  // Live by default: the integration stub (backend/app/stub, /hr/* routes) enforces access control server-side.
+  // VITE_FORCE_MOCK=true keeps the in-browser demo; if the backend is unreachable and VITE_USE_MOCK_FALLBACK is
+  // not 'false', calls fall back to the mock so the dashboard still renders.
+  private static forceMock: boolean = import.meta.env.VITE_FORCE_MOCK === 'true';
+  private static mockFallback: boolean = import.meta.env.VITE_USE_MOCK_FALLBACK !== 'false';
+  private static stubAdminKey: string = import.meta.env.VITE_STUB_ADMIN_KEY || 'adm';
 
   public static setUser(user: User) {
     this.user = user;
@@ -85,8 +90,44 @@ export class ApiService {
     return this.forceMock;
   }
 
+  public static isLive(): boolean {
+    return !this.forceMock;
+  }
+
   public static getBaseUrl(): string {
     return this.apiBaseUrl;
+  }
+
+  // --- LIVE BACKEND ---
+  // Returns null when the mock should answer instead (forced mock, or backend unreachable with fallback on).
+  private static async live<T>(path: string, init: RequestInit = {}): Promise<ApiResponse<T> | null> {
+    if (this.forceMock) return null;
+    const timestamp = () => new Date().toISOString();
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/hr${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Stub-Admin': this.stubAdminKey,
+          'X-Staff-Id': this.user.id,
+          ...(init.headers || {})
+        }
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail = body?.detail;
+        const error = typeof detail === 'string' ? detail : detail?.message || detail?.reason || `HTTP ${res.status}`;
+        return { success: false, status: res.status, error, source: 'real_backend', timestamp: timestamp() };
+      }
+      return { success: true, status: res.status, data: body as T, source: 'real_backend', timestamp: timestamp() };
+    } catch {
+      if (this.mockFallback) return null;
+      return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: timestamp() };
+    }
+  }
+
+  private static post(body: unknown): RequestInit {
+    return { method: 'POST', body: JSON.stringify(body) };
   }
 
   // --- ACCESS CONTROL AUTHORIZATION CHECKS ---
@@ -126,6 +167,8 @@ export class ApiService {
 
   // --- COMPLAINTS API ---
   public static async getReports(): Promise<ApiResponse<Complaint[]>> {
+    const live = await this.live<Complaint[]>('/cases');
+    if (live) return live;
     // Filter reports based on permissions
     const accessible = stateComplaints.filter(c => {
       if (c.revokedMemberIds.includes(this.user.id)) return false;
@@ -145,6 +188,8 @@ export class ApiService {
   }
 
   public static async getReport(id: string): Promise<ApiResponse<Complaint>> {
+    const live = await this.live<Complaint>(`/cases/${encodeURIComponent(id)}`);
+    if (live) return live;
     try {
       this.verifyCaseAccess(id);
       const report = stateComplaints.find(c => c.id === id);
@@ -167,6 +212,8 @@ export class ApiService {
 
   // --- COMMITTEE CHALLENGES API ---
   public static async getChallenges(poolId?: CommitteePoolId): Promise<ApiResponse<CommitteeChallenge[]>> {
+    const live = await this.live<CommitteeChallenge[]>(poolId ? `/challenges?pool_id=${poolId}` : '/challenges');
+    if (live) return live;
     let poolFiltered = stateChallenges;
     if (poolId) {
       poolFiltered = poolFiltered.filter(ch => ch.poolId === poolId);
@@ -190,6 +237,8 @@ export class ApiService {
   }
 
   public static async getChallenge(id: string): Promise<ApiResponse<CommitteeChallenge>> {
+    const live = await this.live<CommitteeChallenge>(`/challenges/${encodeURIComponent(id)}`);
+    if (live) return live;
     const challenge = stateChallenges.find(c => c.id === id);
     if (!challenge) {
       return { success: false, status: 404, error: 'Challenge not found', source: 'stateful_mock', timestamp: new Date().toISOString() };
@@ -215,6 +264,11 @@ export class ApiService {
     rationale: string,
     replacementMemberId: string = 'usr_priya'
   ): Promise<ApiResponse<{ challenge: CommitteeChallenge; updatedComplaint: Complaint }>> {
+    const live = await this.live<{ challenge: CommitteeChallenge; updatedComplaint: Complaint }>(
+      `/challenges/${encodeURIComponent(challengeId)}/decide`,
+      this.post({ decision, rationale, replacement_member_id: replacementMemberId })
+    );
+    if (live) return live;
     const challenge = stateChallenges.find(c => c.id === challengeId);
     if (!challenge) {
       return { success: false, status: 404, error: 'Challenge not found', source: 'stateful_mock', timestamp: new Date().toISOString() };
@@ -336,6 +390,8 @@ export class ApiService {
 
   // --- WITNESS QUORUM API ---
   public static async getWitnessInvitations(complaintId: string): Promise<ApiResponse<WitnessInvitation[]>> {
+    const live = await this.live<WitnessInvitation[]>(`/cases/${encodeURIComponent(complaintId)}/witnesses`);
+    if (live) return live;
     // Only assigned investigator can see full invitation responses
     const isAssigned = this.user.role === 'assigned_investigator' || this.user.role === 'administrator';
 
@@ -364,6 +420,8 @@ export class ApiService {
   }
 
   public static async getWitnessQuorumSummary(complaintId: string): Promise<ApiResponse<WitnessQuorumSummary>> {
+    const live = await this.live<WitnessQuorumSummary>(`/cases/${encodeURIComponent(complaintId)}/witness-summary`);
+    if (live) return live;
     const list = stateWitnesses.filter(w => w.complaintId === complaintId);
     const accepted = list.filter(w => w.status === 'accepted').length;
     const declined = list.filter(w => w.status === 'declined').length;
@@ -388,6 +446,11 @@ export class ApiService {
   }
 
   public static async inviteWitness(complaintId: string, roleAlias: string): Promise<ApiResponse<WitnessInvitation>> {
+    const live = await this.live<WitnessInvitation>(
+      `/cases/${encodeURIComponent(complaintId)}/witnesses`,
+      this.post({ alias: roleAlias })
+    );
+    if (live) return live;
     if (this.user.role !== 'assigned_investigator' && this.user.role !== 'administrator') {
       return {
         success: false,
@@ -420,6 +483,10 @@ export class ApiService {
 
   // --- INVESTIGATION MESSAGES API ---
   public static async getMessages(complaintId: string): Promise<ApiResponse<Array<{ id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean }>>> {
+    const live = await this.live<Array<{ id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean }>>(
+      `/cases/${encodeURIComponent(complaintId)}/messages`
+    );
+    if (live) return live;
     try {
       this.verifyCaseAccess(complaintId);
       const msgs = stateMessages[complaintId] || [];
@@ -431,6 +498,11 @@ export class ApiService {
   }
 
   public static async sendMessage(complaintId: string, text: string): Promise<ApiResponse<{ id: string; sender: string; text: string; timestamp: string }>> {
+    const live = await this.live<{ id: string; sender: string; text: string; timestamp: string }>(
+      `/cases/${encodeURIComponent(complaintId)}/messages`,
+      this.post({ text })
+    );
+    if (live) return live;
     try {
       this.verifyCaseAccess(complaintId);
       if (!stateMessages[complaintId]) {
@@ -453,6 +525,10 @@ export class ApiService {
 
   // --- SILENT AUDIT API ---
   public static async getAuditEvents(complaintId?: string): Promise<ApiResponse<AuditEvent[]>> {
+    const live = await this.live<AuditEvent[]>(
+      complaintId ? `/audit?case_id=${encodeURIComponent(complaintId)}` : '/audit'
+    );
+    if (live) return live;
     let events = stateAuditEvents;
     if (complaintId) {
       events = events.filter(e => e.complaintId === complaintId);
@@ -467,6 +543,10 @@ export class ApiService {
   }
 
   public static async verifyEvidenceIntegrity(complaintId: string, evidenceId: string): Promise<ApiResponse<{ verified: boolean; sha256Matches: boolean; zkpVerified: boolean; blockTimestamp: string }>> {
+    const live = await this.live<{ verified: boolean; sha256Matches: boolean; zkpVerified: boolean; blockTimestamp: string }>(
+      `/cases/${encodeURIComponent(complaintId)}/evidence/${encodeURIComponent(evidenceId)}/verify`
+    );
+    if (live) return live;
     const report = stateComplaints.find(c => c.id === complaintId);
     const ev = report?.evidence.find(e => e.id === evidenceId);
 
@@ -490,6 +570,8 @@ export class ApiService {
 
   // --- COMMITTEE POOL API ---
   public static async getCommitteePool(poolId?: CommitteePoolId): Promise<ApiResponse<CommitteeMemberRecord[]>> {
+    const live = await this.live<CommitteeMemberRecord[]>(poolId ? `/committee-pool?pool_id=${poolId}` : '/committee-pool');
+    if (live) return live;
     let list = stateCommitteePool;
     if (poolId) {
       list = list.filter(m => m.poolId === poolId);

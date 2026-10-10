@@ -5,7 +5,6 @@ import {
   Radio,
   MessageSquare,
   Layers,
-  Mail,
   Shield
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,8 +16,7 @@ export type NavPage =
   | 'committee'
   | 'witness'
   | 'inbox'
-  | 'repeat_allegations'
-  | 'email_notices';
+  | 'repeat_allegations';
 
 interface SidebarProps {
   currentPage: NavPage;
@@ -45,8 +43,7 @@ export function Sidebar({
     },
     { id: 'witness' as NavPage, label: 'Witness Quorum', icon: Radio },
     { id: 'inbox' as NavPage, label: 'Investigation Inbox', icon: MessageSquare },
-    { id: 'repeat_allegations' as NavPage, label: 'Pattern Intelligence', icon: Layers },
-    { id: 'email_notices' as NavPage, label: 'Email Notices', icon: Mail }
+    { id: 'repeat_allegations' as NavPage, label: 'Pattern Intelligence', icon: Layers }
   ];
 
   return (
