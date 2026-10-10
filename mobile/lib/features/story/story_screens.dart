@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/repository.dart';
 import '../../widgets/components.dart';
 import '../../core/theme.dart';
 import '../../integration/errors.dart';
+import '../../integration/live_providers.dart';
 import 'story_state.dart';
 
 class TellYourStoryScreen extends ConsumerStatefulWidget {
@@ -82,15 +84,24 @@ class _TellYourStoryScreenState extends ConsumerState<TellYourStoryScreen> {
             draft.narrative.trim().isEmpty ? null : session.understand,
           ),
           if (draft.understanding) ...[
-            const HintCard(
-              'Demonstration guidance only. These are fixed examples, not classifications inferred from your words. No model or external AI service reads your narrative. More than one concern may be relevant—or none may be clear.',
+            HintCard(
+              modeText(
+                'Demonstration guidance only. These are fixed examples, not classifications inferred from your words. No model or external AI service reads your narrative. More than one concern may be relevant—or none may be clear.',
+                'These suggestions come from keyword matching on the INCOGNITO server. Your words are not stored or logged, and nothing is reported until you confirm. More than one concern may be relevant—or none may be clear.',
+              ),
             ),
             Text(
               'Possible ways to understand a concern',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            for (final suggestion in demoSuggestions)
+            for (final suggestion
+                in demoEnabled
+                    ? demoSuggestions
+                    : ref
+                              .watch(liveSuggestionsProvider(draft.narrative))
+                              .value ??
+                          const <ClassificationSuggestion>[])
               SoftCard(
                 onTap: () => session.toggle(suggestion),
                 child: Column(

@@ -440,6 +440,8 @@ class DetailsScreen extends StatelessWidget {
           'Your case token stays on this phone. It is the only way to open this case; there is no account to recover it.',
         ),
       ),
+      if (!demoEnabled && report.resolutionOutcome != null)
+        _OutcomeCard(report),
       ActionButton(
         'Investigation inbox',
         () => context.push('/case/${report.id}/chat', extra: report),
@@ -454,6 +456,96 @@ class DetailsScreen extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// Reflect & Reform: the outcome and the organisation's reform actions, then anonymous structured feedback.
+class _OutcomeCard extends ConsumerStatefulWidget {
+  const _OutcomeCard(this.report);
+  final Report report;
+  @override
+  ConsumerState<_OutcomeCard> createState() => _OutcomeCardState();
+}
+
+class _OutcomeCardState extends ConsumerState<_OutcomeCard> {
+  double fairness = 3;
+  bool feltSafe = true, again = true, busy = false;
+
+  Future<void> send() async {
+    setState(() => busy = true);
+    try {
+      final repo = ref.read(repositoryProvider);
+      if (repo is LiveRepository) {
+        await repo.reflect(
+          widget.report,
+          fairness: fairness.round(),
+          feltSafe: feltSafe,
+          wouldReportAgain: again,
+        );
+      }
+      if (mounted) {
+        feedback(
+          context,
+          'Thank you. Your feedback is anonymous and only counted in totals.',
+        );
+      }
+    } catch (e) {
+      if (mounted) feedback(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = widget.report;
+    return SoftCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Outcome: ${r.resolutionOutcome}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          if (r.resolutionActions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'What the organisation committed to: ${r.resolutionActions.join(' · ')}',
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (r.reflectionSubmitted)
+            const Text('You shared feedback on this case. Thank you.')
+          else ...[
+            const Text(
+              'How was this handled? Your answers are anonymous and only shown to HR in totals.',
+            ),
+            const SizedBox(height: 8),
+            Text('Fairness of the process: ${fairness.round()} / 5'),
+            Slider(
+              value: fairness,
+              min: 1,
+              max: 5,
+              divisions: 4,
+              onChanged: (v) => setState(() => fairness = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('I felt safe reporting'),
+              value: feltSafe,
+              onChanged: (v) => setState(() => feltSafe = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('I would report again'),
+              value: again,
+              onChanged: (v) => setState(() => again = v),
+            ),
+            ActionButton('Share feedback', send, busy: busy),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class ChallengeScreen extends ConsumerStatefulWidget {

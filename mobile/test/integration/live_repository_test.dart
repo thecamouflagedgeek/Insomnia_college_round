@@ -45,7 +45,7 @@ void main() {
       final report = await repo.submit(
         'Bullying',
         'Stand-ups',
-        'Repeated shouting.',
+        'Repeated shouting, run ${DateTime.now().microsecondsSinceEpoch}.',
         DateTime(2026, 10, 9),
         [file.path],
       );
@@ -53,7 +53,10 @@ void main() {
       expect(report.status, 'Committee assigned');
       expect(report.files, ['note.txt']);
       expect(report.messages, isEmpty);
-      expect(report.committee.map((m) => m.name), ['Marcus Vance', 'David Kim']);
+      expect(report.committee.map((m) => m.name), [
+        'Marcus Vance',
+        'David Kim',
+      ]);
 
       // One complaint per identity per UTC day: the daily scope's nullifier is already used.
       await expectLater(
@@ -123,6 +126,58 @@ void main() {
       await repo.respond(invitations.single, 'Accepted — demo');
       expect(invitations.single.response, 'accept');
 
+      // A case cannot be resolved while a challenge is pending: the independent reviewer rules first.
+      final reviewer = Dio(
+        BaseOptions(
+          baseUrl: stubUrl,
+          headers: {'X-Stub-Admin': 'adm', 'X-Staff-Id': 'usr_aris'},
+        ),
+      );
+      final pending = ((await reviewer.get('/hr/challenges')).data as List)
+          .where((c) => c['complaintId'] == report.id)
+          .toList();
+      await reviewer.post(
+        '/hr/challenges/${pending.single['id']}/decide',
+        data: {
+          'decision': 'reject',
+          'rationale': 'No reporting line between them.',
+        },
+      );
+
+      // Reflect & Reform: HR resolves, the reporter sees the outcome and gives anonymous feedback once.
+      await hr.post(
+        '/hr/cases/${report.id}/resolve',
+        data: {
+          'outcome': 'substantiated',
+          'summary': 'Witnesses corroborate the reported pattern.',
+          'actions': ['Manager coaching'],
+        },
+      );
+      await repo.refresh(report);
+      expect(report.resolutionOutcome, 'Substantiated');
+      expect(report.resolutionActions, ['Manager coaching']);
+      await repo.reflect(
+        report,
+        fairness: 4,
+        feltSafe: true,
+        wouldReportAgain: true,
+      );
+      expect(report.reflectionSubmitted, isTrue);
+      await expectLater(
+        repo.reflect(
+          report,
+          fairness: 1,
+          feltSafe: false,
+          wouldReportAgain: false,
+        ),
+        throwsA(isA<ApiFailure>()),
+      );
+
+      final suggestions = await repo.suggest(
+        'I faced retaliation after reporting my manager',
+      );
+      expect(suggestions.map((s) => s.category), contains('Retaliation'));
+
       var audit = await repo.audit(report);
       for (
         var i = 0;
@@ -140,6 +195,8 @@ void main() {
           'Evidence sealed',
           'Challenge submitted',
           'Message exchanged',
+          'Severity assessed',
+          'Resolution recorded',
         ]),
       );
     },
