@@ -8,11 +8,33 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-COMMITTEE = [
-    {"member_id": "cm-a", "name": "Committee member A", "role": "Presiding officer"},
-    {"member_id": "cm-b", "name": "Committee member B", "role": "Member"},
-    {"member_id": "cm-c", "name": "Committee member C", "role": "External member"},
-]
+# Staff directory: the same people as the HR dashboard's demo users (web/src/types/auth.ts), so a staff member's
+# id means the same thing in the app, the dashboard and the audit trail. M2's real auth replaces this.
+STAFF = {
+    "usr_sarah": {"name": "Sarah Jenkins", "role": "hr_reviewer", "title": "Senior HR Operations & Compliance Lead",
+                  "department": "People & Culture"},
+    "usr_elena": {"name": "Elena Rostova", "role": "assigned_investigator",
+                  "title": "Lead Workplace Misconduct Investigator", "department": "Independent Ethics Unit"},
+    "usr_marcus": {"name": "Marcus Vance", "role": "committee_member", "title": "VP of Engineering Operations",
+                   "department": "Engineering Operations"},
+    "usr_david": {"name": "David Kim", "role": "committee_member", "title": "Associate General Counsel (Labor)",
+                  "department": "Legal Counsel"},
+    "usr_priya": {"name": "Priya Sundaram", "role": "committee_member",
+                  "title": "Senior Director of People Relations", "department": "People Relations"},
+    "usr_aris": {"name": "Dr. Aris Thorne", "role": "independent_reviewer",
+                 "title": "Independent Ombudsperson & Challenge Adjudicator", "department": "External Oversight Panel"},
+}
+DEFAULT_COMMITTEE = ["usr_marcus", "usr_david"]
+DEFAULT_INVESTIGATOR = "usr_elena"
+DEFAULT_REPLACEMENT = "usr_priya"
+
+
+def committee_entry(staff_id: str) -> dict:
+    s = STAFF[staff_id]
+    return {"member_id": staff_id, "name": s["name"], "role": s["title"]}
+
+
+COMMITTEE = [committee_entry(i) for i in DEFAULT_COMMITTEE]
 
 
 def now() -> str:
@@ -54,6 +76,9 @@ class ChallengeRec:
     status: str  # pending_review | upheld | rejected
     proof_tx: str
     at: str
+    reviewer_id: str | None = None
+    rationale: str | None = None
+    decided_at: str | None = None
 
 
 @dataclass
@@ -63,6 +88,9 @@ class Invitation:
     code_hash: str
     context: str
     response: str | None = None
+    alias: str = "Witness"
+    invited_at: str = ""
+    responded_at: str | None = None
 
 
 @dataclass
@@ -73,6 +101,10 @@ class Case:
     status: str
     created_at: str
     committee: list[dict] = field(default_factory=lambda: [dict(m) for m in COMMITTEE])
+    investigator_id: str = DEFAULT_INVESTIGATOR
+    revoked_ids: list[str] = field(default_factory=list)
+    nullifier: str = ""
+    proof_tx: str = ""
     evidence: list[Evidence] = field(default_factory=list)
     challenges: list[ChallengeRec] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)

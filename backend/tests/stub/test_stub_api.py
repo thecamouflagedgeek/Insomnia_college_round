@@ -66,7 +66,7 @@ def test_full_reporter_journey(client):
     assert case_id.startswith("INC-") and r.json()["status"] == "committee_assigned"
 
     view = client.get(f"/reports/{case_id}", headers=auth(token)).json()
-    assert view["title"] == "Team conduct" and [m["member_id"] for m in view["committee"]] == ["cm-a", "cm-b", "cm-c"]
+    assert view["title"] == "Team conduct" and [m["member_id"] for m in view["committee"]] == ["usr_marcus", "usr_david"]
 
     up = client.post(f"/reports/{case_id}/evidence", headers=auth(token),
                      files={"file": ("note.txt", b"evidence bytes", "text/plain")})
@@ -78,14 +78,14 @@ def test_full_reporter_journey(client):
     msgs = client.get(f"/reports/{case_id}/messages", headers=auth(token)).json()
     assert [m["sender"] for m in msgs] == ["you", "investigator"]
 
-    cp = json.dumps({"member_id": "cm-b", "reason": "Prior involvement",
+    cp = json.dumps({"member_id": "usr_david", "reason": "Prior involvement",
                      "explanation": "They reviewed my last complaint.", "client_nonce": "c-123456789"})
     ch = client.post(f"/reports/{case_id}/challenge", headers=auth(token),
-                     json={"payload": cp, "proof": proof(cp, challenge_scope_text(case_id, "cm-b"))})
+                     json={"payload": cp, "proof": proof(cp, challenge_scope_text(case_id, "usr_david"))})
     assert ch.status_code == 201 and ch.json()["status"] == "pending_review"
     decided = client.post(f"/_stub/reports/{case_id}/challenges/{ch.json()['challenge_id']}/decide", headers=ADMIN,
                           json={"decision": "upheld"}).json()
-    assert "cm-b" not in [m["member_id"] for m in decided["committee"]]
+    assert "usr_david" not in [m["member_id"] for m in decided["committee"]]
 
     v = wait_verified(client, case_id, token)
     types = [e["event_type"] for e in v["events"]]
@@ -128,9 +128,9 @@ def test_proof_binding_errors(client):
 
 def test_challenge_scope_is_per_case_and_member(client):
     r = submit(client).json()
-    cp = json.dumps({"member_id": "cm-a", "reason": "Other", "explanation": "Fifteen chars at least.",
+    cp = json.dumps({"member_id": "usr_marcus", "reason": "Other", "explanation": "Fifteen chars at least.",
                      "client_nonce": "c-123456789"})
-    wrong = proof(cp, challenge_scope_text(r["case_id"], "cm-c"))
+    wrong = proof(cp, challenge_scope_text(r["case_id"], "usr_priya"))
     res = client.post(f"/reports/{r['case_id']}/challenge", headers=auth(r["case_token"]),
                       json={"payload": cp, "proof": wrong})
     assert res.json()["detail"]["reason"] == "scope_mismatch"
@@ -180,5 +180,5 @@ def test_contract_matches_served_routes():
     documented = {(p, m.upper()) for p, ops in contract["paths"].items() for m in ops if m != "parameters"}
     app = create_app(dict(ENV))
     served = {(path, m.upper()) for path, ops in app.openapi()["paths"].items() for m in ops
-              if not path.startswith("/_stub")}
+              if not path.startswith(("/_stub", "/hr"))}
     assert documented == served

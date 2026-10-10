@@ -48,6 +48,7 @@ class Receipt:
     anchor_seq: int | None
     anchor_tx: str | None
     explorer_url: str | None
+    anchor_block: int | None = None
 
 
 class CaseVerifier:
@@ -99,6 +100,10 @@ class CaseVerifier:
         ok = not bad and all(c.status != "anchor_mismatch" for c in checks) and all(a.ok for a in anchor_checks)
         return CaseVerification(case_id, ok, bad[0] if bad else None, checks, anchor_checks)
 
+    def events(self, case_id: str) -> list[AuditEvent]:
+        """Stored events as-is (unverified); pair with verify() for their status."""
+        return self._repo.events(case_id)
+
     def receipts(self, case_id: str) -> list[Receipt]:
         anchors = self._repo.anchors(case_id)
         out = []
@@ -106,7 +111,8 @@ class CaseVerifier:
             a = next((x for x in anchors if x.seq >= ev.seq), None)
             out.append(Receipt(ev.seq, ev.event_type, ev.payload.get("at", ""), ev.commitment, ev.entry_hash,
                                a.seq if a else None, a.tx_hash if a else None,
-                               self._explorer.format(hash=a.tx_hash) if a else None))
+                               self._explorer.format(hash=a.tx_hash) if a else None,
+                               a.block_number if a else None))
         return out
 
     def _content_ok(self, case_id: str, ev: AuditEvent) -> bool | None:
