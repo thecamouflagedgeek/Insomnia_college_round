@@ -106,3 +106,29 @@ def test_outsider_identity_rejected(chain):
     with pytest.raises(ProofRejected) as exc:
         svc.verify_submission(proof, payload, [scope], kind="complaint")
     assert exc.value.reason == "unknown_root"
+
+
+# --- Silent Audit end-to-end against a real CaseAuditRegistry ----------------------------------
+from dataclasses import replace
+
+from app.chain.anchorer import Anchorer
+from app.chain.audit_log import AuditLog
+from app.chain.audit_repo import InMemoryAuditRepository
+from app.chain.verifier import CaseVerifier
+
+
+def test_anchor_verify_and_detect_tamper_on_chain(registry):
+    repo = InMemoryAuditRepository()
+    log = AuditLog(repo)
+    log.record("INC-E2E", "complaint_submitted", {"content_sha256": "00" * 32})
+    log.record("INC-E2E", "challenge_decided", {"challenge_id": "ch1", "decision": "upheld"})
+    anchored = Anchorer(repo, registry).run_once()
+    assert [(r.case_id, r.seq) for r in anchored] == [("INC-E2E", 2)]
+
+    verifier = CaseVerifier(repo, registry, {}, "https://amoy.polygonscan.com/tx/{hash}")
+    assert verifier.verify("INC-E2E").ok
+
+    ev = repo._events["INC-E2E"][1]
+    repo._events["INC-E2E"][1] = replace(ev, payload={**ev.payload, "data": {"challenge_id": "ch1", "decision": "rejected"}})
+    result = verifier.verify("INC-E2E")
+    assert not result.ok and result.events[1].status == "tampered" and not result.anchors[0].ok
