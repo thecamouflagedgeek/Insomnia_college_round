@@ -80,3 +80,20 @@ def test_receipts_link_anchor_tx():
     rs = v.receipts("INC-1")
     assert [r.seq for r in rs] == [1, 2]
     assert rs[0].anchor_seq == 2 and rs[0].explorer_url.startswith("https://amoy.polygonscan.com/tx/0x")
+
+
+def test_status_pinpoints_the_edited_event():
+    repo, _, log, v, _ = _setup()
+    log.record("INC-1", "status_changed", {"from": "review", "to": "investigating"})
+    Anchorer(repo, v._registry).run_once()
+    chain = repo._events["INC-1"]
+    ev = chain[1]
+    chain[1] = replace(ev, payload={**ev.payload, "data": {"committee_id": "c2"}})
+    r = v.verify("INC-1")
+    assert [e.status for e in r.events] == ["anchor_mismatch", "tampered", "chain_broken"]
+    assert r.first_bad_seq == 2
+
+
+def test_first_bad_seq_none_when_ok():
+    _, _, _, v, _ = _setup()
+    assert v.verify("INC-1").first_bad_seq is None

@@ -17,7 +17,7 @@ class EventCheck:
     chain_ok: bool
     content_ok: bool | None
     anchored_by: int | None
-    status: str  # verified | pending_anchor | tampered
+    status: str  # verified | pending_anchor | tampered | chain_broken | anchor_mismatch
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,7 @@ class AnchorCheck:
 class CaseVerification:
     case_id: str
     ok: bool
+    first_bad_seq: int | None
     events: list[EventCheck]
     anchors: list[AnchorCheck]
 
@@ -81,8 +82,12 @@ class CaseVerifier:
         checks = []
         for ev, commitment_ok, chain_ok, content_ok in partial:
             covering = next((a for a in anchor_checks if a.seq >= ev.seq), None)
-            if not (commitment_ok and chain_ok and content_ok is not False) or (covering and not covering.ok):
-                status = "tampered"
+            if not commitment_ok or content_ok is False:
+                status = "tampered"         # this event's own data was edited
+            elif not chain_ok:
+                status = "chain_broken"     # intact itself, but an earlier link changed or went missing
+            elif covering is not None and not covering.ok:
+                status = "anchor_mismatch"  # intact, but the on-chain head covering it no longer matches
             elif covering is None:
                 status = "pending_anchor"
             else:
@@ -90,8 +95,9 @@ class CaseVerifier:
             checks.append(EventCheck(ev.seq, ev.event_type, ev.payload.get("at", ""), commitment_ok, chain_ok,
                                      content_ok, covering.seq if covering else None, status))
 
-        ok = all(c.status != "tampered" for c in checks) and all(a.ok for a in anchor_checks)
-        return CaseVerification(case_id, ok, checks, anchor_checks)
+        bad = [c.seq for c in checks if c.status in ("tampered", "chain_broken")]
+        ok = not bad and all(c.status != "anchor_mismatch" for c in checks) and all(a.ok for a in anchor_checks)
+        return CaseVerification(case_id, ok, bad[0] if bad else None, checks, anchor_checks)
 
     def receipts(self, case_id: str) -> list[Receipt]:
         anchors = self._repo.anchors(case_id)
