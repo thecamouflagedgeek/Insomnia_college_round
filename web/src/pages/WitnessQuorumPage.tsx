@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { WitnessQuorumPanel } from '../components/investigation/WitnessQuorumPanel';
+import { useAccessibleCases } from '../hooks/useAccessibleCases';
 
 export function WitnessQuorumPage() {
-  const [selectedCaseId, setSelectedCaseId] = useState('INC-892');
+  const { cases, selectedCaseId, setSelectedCaseId } = useAccessibleCases();
 
   return (
     <div className="space-y-6">
@@ -21,13 +21,20 @@ export function WitnessQuorumPage() {
             onChange={(e) => setSelectedCaseId(e.target.value)}
             className="bg-white border border-stone-200 text-xs font-bold text-[#191725] rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#5B3FA3] shadow-sm"
           >
-            <option value="INC-892">Case INC-892 (Operations Retaliation)</option>
-            <option value="INC-741">Case INC-741 (Executive BD Misconduct)</option>
+            {cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                Case {c.id} ({c.title})
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      <WitnessQuorumPanel complaintId={selectedCaseId} />
+      {selectedCaseId ? (
+        <WitnessQuorumPanel complaintId={selectedCaseId} />
+      ) : (
+        <p className="text-xs text-[#777487]">No cases available for your role.</p>
+      )}
     </div>
   );
 }

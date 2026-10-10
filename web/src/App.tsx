@@ -17,7 +17,15 @@ import { RepeatAllegations } from './pages/RepeatAllegations';
 function AppContent() {
   const { currentUser } = useAuth();
   const [currentPage, setCurrentPage] = useState<NavPage>('dashboard');
-  const [selectedCaseId, setSelectedCaseId] = useState<string>('INC-892');
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('');
+
+  // Start on the newest case this user can access (live ids replace the mock's INC-892).
+  useEffect(() => {
+    ApiService.getReports().then((res) => {
+      const first = res.data?.[0]?.id;
+      if (first) setSelectedCaseId((cur) => cur || first);
+    });
+  }, [currentUser.id]);
   const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(1);
 
   // Monitor challenges to update badge dynamically

@@ -1,22 +1,8 @@
-import { useEffect, useState } from 'react';
 import { InvestigationInbox } from '../components/investigation/InvestigationInbox';
-import { ApiService } from '../services/api';
-import { useAuth } from '../hooks/useAuth';
-import { Complaint } from '../types/complaint';
+import { useAccessibleCases } from '../hooks/useAccessibleCases';
 
 export function InvestigationInboxPage() {
-  const { currentUser } = useAuth();
-  const [cases, setCases] = useState<Complaint[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState('');
-
-  // Channels = cases this staff member may access (enforced by the backend).
-  useEffect(() => {
-    ApiService.getReports().then((res) => {
-      const list = res.data || [];
-      setCases(list);
-      setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
-    });
-  }, [currentUser.id]);
+  const { cases, selectedCaseId, setSelectedCaseId } = useAccessibleCases();
 
   return (
     <div className="space-y-6">

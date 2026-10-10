@@ -10,6 +10,7 @@ export interface WitnessInvitation {
   statementProvided: boolean;
   statementLengthWords?: number;
   encryptedStatementRef?: string;
+  witnessCode?: string; // returned once on invite; share with the witness out of band
 }
 
 export interface WitnessQuorumSummary {

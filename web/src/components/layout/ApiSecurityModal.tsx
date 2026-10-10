@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Send, ShieldCheck, AlertCircle, Copy, Check } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
+import { useAccessibleCases } from '../../hooks/useAccessibleCases';
 
 interface ApiSecurityModalProps {
   isOpen: boolean;
@@ -10,7 +11,10 @@ interface ApiSecurityModalProps {
 
 export function ApiSecurityModal({ isOpen, onClose }: ApiSecurityModalProps) {
   const { currentUser, allUsers, switchUser } = useAuth();
-  const [endpoint, setEndpoint] = useState<string>('GET /reports/INC-892');
+  // Probe a real case so the access-control demo hits the live backend; INC-892 only exists in mock mode.
+  const { selectedCaseId } = useAccessibleCases();
+  const demoCase = selectedCaseId || 'INC-892';
+  const [endpoint, setEndpoint] = useState<string>('GET /reports/CASE');
   const [responseOutput, setResponseOutput] = useState<{
     status: number;
     statusText: string;
@@ -24,11 +28,11 @@ export function ApiSecurityModal({ isOpen, onClose }: ApiSecurityModalProps) {
   if (!isOpen) return null;
 
   const testEndpoints = [
-    { label: 'GET /reports/INC-892 (Case Details & Evidence)', value: 'GET /reports/INC-892' },
+    { label: `GET /reports/${demoCase} (Case Details & Evidence)`, value: 'GET /reports/CASE' },
     { label: 'GET /challenges/CH-104 (Confidential Challenge Details)', value: 'GET /challenges/CH-104' },
     { label: 'GET /reports (Accessible Complaint Queue)', value: 'GET /reports' },
-    { label: 'GET /reports/INC-892/witness-invitations (Quorum Roster)', value: 'GET /reports/INC-892/witness-invitations' },
-    { label: 'GET /reports/INC-892/audit (Silent Cryptographic Trail)', value: 'GET /reports/INC-892/audit' }
+    { label: `GET /reports/${demoCase}/witness-invitations (Quorum Roster)`, value: 'GET /reports/CASE/witness-invitations' },
+    { label: `GET /reports/${demoCase}/audit (Silent Cryptographic Trail)`, value: 'GET /reports/CASE/audit' }
   ];
 
   const handleExecuteRequest = async () => {
@@ -36,8 +40,8 @@ export function ApiSecurityModal({ isOpen, onClose }: ApiSecurityModalProps) {
     const start = performance.now();
 
     try {
-      if (endpoint === 'GET /reports/INC-892') {
-        const res = await ApiService.getReport('INC-892');
+      if (endpoint === 'GET /reports/CASE') {
+        const res = await ApiService.getReport(demoCase);
         const end = performance.now();
         setResponseOutput({
           status: res.status,
@@ -78,8 +82,8 @@ export function ApiSecurityModal({ isOpen, onClose }: ApiSecurityModalProps) {
           },
           executionTimeMs: Math.round(end - start)
         });
-      } else if (endpoint === 'GET /reports/INC-892/witness-invitations') {
-        const res = await ApiService.getWitnessInvitations('INC-892');
+      } else if (endpoint === 'GET /reports/CASE/witness-invitations') {
+        const res = await ApiService.getWitnessInvitations(demoCase);
         const end = performance.now();
         setResponseOutput({
           status: res.status,
@@ -94,8 +98,8 @@ export function ApiSecurityModal({ isOpen, onClose }: ApiSecurityModalProps) {
           },
           executionTimeMs: Math.round(end - start)
         });
-      } else if (endpoint === 'GET /reports/INC-892/audit') {
-        const res = await ApiService.getAuditEvents('INC-892');
+      } else if (endpoint === 'GET /reports/CASE/audit') {
+        const res = await ApiService.getAuditEvents(demoCase);
         const end = performance.now();
         setResponseOutput({
           status: res.status,

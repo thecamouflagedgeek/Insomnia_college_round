@@ -24,6 +24,7 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
   const [summary, setSummary] = useState<WitnessQuorumSummary | null>(null);
   const [newAlias, setNewAlias] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [issuedCode, setIssuedCode] = useState<{ alias: string; code: string } | null>(null);
 
   const isAssignedInvestigator =
     currentUser.role === 'assigned_investigator' || currentUser.role === 'administrator';
@@ -38,6 +39,7 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
   };
 
   useEffect(() => {
+    setIssuedCode(null);
     loadData();
   }, [complaintId, currentUser.id]);
 
@@ -46,7 +48,8 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     if (!newAlias.trim()) return;
 
     setIsSubmitting(true);
-    await ApiService.inviteWitness(complaintId, newAlias);
+    const res = await ApiService.inviteWitness(complaintId, newAlias);
+    if (res.data?.witnessCode) setIssuedCode({ alias: res.data.anonymousAlias, code: res.data.witnessCode });
     setNewAlias('');
     setIsSubmitting(false);
     await loadData();
@@ -192,6 +195,15 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
               <span>Issue Invite</span>
             </button>
           </div>
+          {issuedCode && (
+            <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-[11px] text-emerald-900">
+              Witness code for <strong>{issuedCode.alias}</strong>:{' '}
+              <code className="font-mono font-bold select-all">{issuedCode.code}</code>
+              <div className="mt-1 text-emerald-800">
+                Shown once. Hand it to the witness privately; they enter it in the INCOGNITO app to respond.
+              </div>
+            </div>
+          )}
         </form>
       ) : (
         <div className="p-3 bg-stone-100 rounded-2xl text-[11px] text-[#777487] flex items-center gap-2">

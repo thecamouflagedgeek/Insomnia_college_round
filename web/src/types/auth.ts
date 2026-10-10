@@ -52,6 +52,17 @@ export const DEMO_USERS: User[] = [
     conflictedCaseIds: ['INC-892']
   },
   {
+    id: 'usr_priya',
+    name: 'Priya Sundaram',
+    email: 'p.sundaram@incognito.org',
+    role: 'committee_member',
+    title: 'Senior Director of People Relations',
+    department: 'People Relations',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [], // Seated as the replacement when a challenge is upheld
+    conflictedCaseIds: []
+  },
+  {
     id: 'usr_aris',
     name: 'Dr. Aris Thorne',
     email: 'a.thorne@ombuds-independent.org',
