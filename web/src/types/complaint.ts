@@ -1,3 +1,5 @@
+import { CaseResolution } from './intelligence';
+
 export type ComplaintCategory =
   | 'sexual_harassment'
   | 'bullying_authority_abuse'
@@ -48,4 +50,10 @@ export interface Complaint {
   zkpNullifierHash: string;
   witnessQuorumActive: boolean;
   requiredNextAction: string;
+  // Integrated backend (M3 engines); absent in mock data
+  categoryLabel?: string;
+  severitySignals?: string[];
+  integrityFlags?: string[];
+  resolution?: CaseResolution | null;
+  hasSubjectRef?: boolean;
 }

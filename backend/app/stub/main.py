@@ -69,7 +69,8 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     app.state.chain_mode = mode
     app.state.enroll_codes = [c.strip() for c in env.get("STUB_ENROLL_CODES", "DEMO-INVITE").split(",") if c.strip()]
     app.state.admin_key = env.get("STUB_ADMIN_KEY", "")
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+                       expose_headers=["X-Export-Id", "X-Content-SHA256", "Content-Disposition"])
     app.include_router(build_router(enroll_guard=enroll_guard, case_guard=case_guard))
     app.include_router(build_api_router())
     if app.state.admin_key:

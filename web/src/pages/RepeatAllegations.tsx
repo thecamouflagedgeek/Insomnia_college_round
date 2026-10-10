@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layers, AlertTriangle, ShieldAlert, CheckCircle, Search } from 'lucide-react';
+import { ApiService } from '../services/api';
+import { useAuth } from '../hooks/useAuth';
+import { PatternReport } from '../types/intelligence';
 
 export function RepeatAllegations() {
+  const { currentUser } = useAuth();
   const [filterDepartment, setFilterDepartment] = useState('all');
+  const [live, setLive] = useState<PatternReport | null>(null);
 
-  const clusters = [
+  // Live: M3's correlation + repeat-allegation engines over the cases this user may access.
+  useEffect(() => {
+    ApiService.getPatterns().then((res) => setLive(res.success ? res.data ?? null : null));
+  }, [currentUser.id]);
+
+  const sampleClusters = [
     {
       id: 'CLUST-01',
       patternTitle: 'Recurring Retaliation Following Safety & Regulatory Reporting',
@@ -26,6 +36,32 @@ export function RepeatAllegations() {
       notes: 'Anonymized CSV data indicates variance across promotion speed cohorts.'
     }
   ];
+
+  const liveClusters = live
+    ? [
+        ...live.repeatSubjects.map((r) => ({
+          id: r.subjectRef,
+          patternTitle: `Repeat allegations against the same person (${r.subjectRef})`,
+          department: r.categories.join(' · '),
+          complaintsCount: r.count,
+          caseRefs: r.caseIds,
+          severityRating: `${r.count} separate reports`,
+          independentFindingStatus: 'Requires independent corroboration',
+          notes: 'Matched on a structured directory reference chosen by each reporter, never on typed names.'
+        })),
+        ...live.correlatedPairs.map((p) => ({
+          id: p.caseIds.join('+'),
+          patternTitle: 'Similar incident descriptions',
+          department: `Method: ${p.method}`,
+          complaintsCount: 2,
+          caseRefs: p.caseIds,
+          severityRating: `Similarity ${p.score.toFixed(2)}`,
+          independentFindingStatus: 'Review cue only',
+          notes: live.limitation
+        }))
+      ]
+    : null;
+  const clusters = liveClusters ?? sampleClusters;
 
   return (
     <div className="space-y-6">
@@ -51,6 +87,13 @@ export function RepeatAllegations() {
           counts do not establish liability. All inquiries require independent corroboration.
         </div>
       </div>
+
+      {!live && (
+        <p className="text-xs text-[#777487]">Sample clusters shown: live pattern analysis needs the backend.</p>
+      )}
+      {live && clusters.length === 0 && (
+        <p className="text-xs text-[#777487]">No repeat subjects or similar reports among the cases you can access.</p>
+      )}
 
       {/* Pattern Clusters */}
       <div className="space-y-4">

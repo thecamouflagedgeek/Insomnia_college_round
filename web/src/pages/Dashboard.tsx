@@ -5,6 +5,7 @@ import { ApiService } from '../services/api';
 import { StatCard } from '../components/ui/StatCard';
 import { ComplaintTable } from '../components/complaints/ComplaintTable';
 import { ResolutionTrendsChart } from '../components/ui/ResolutionTrendsChart';
+import { ReflectReformCard } from '../components/ui/ReflectReformCard';
 import { NavPage } from '../components/layout/Sidebar';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -104,6 +105,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
       {/* 2. Prominent Case Resolution Trend Graph */}
       <ResolutionTrendsChart />
+
+      {/* Reflect & Reform (live backend, HR/oversight roles) */}
+      <ReflectReformCard />
 
       {/* 3. Main Grid: Left Primary Workflow + Right Reference Panels (Calendar, Tasks, Chat) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
