@@ -1,0 +1,584 @@
+openapi: 3.1.0
+info:
+  title: INCOGNITO API
+  description: Privacy-first reporting API. Data operations fail closed until schema
+    and auth are verified.
+  version: 0.1.0
+paths:
+  /api/v1/reports:
+    post:
+      tags:
+      - reports
+      summary: Submit a report
+      operationId: submit_report_api_v1_reports_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportReceipt'
+        '503':
+          description: Supabase schema or credentials unavailable
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reports/{reference}/status:
+    get:
+      tags:
+      - reports
+      summary: Get report status using its private reference
+      operationId: report_status_api_v1_reports__reference__status_get
+      parameters:
+      - name: reference
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Reference
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reports/{reference}:
+    get:
+      tags:
+      - reports
+      summary: Retrieve report details (investigator only)
+      operationId: report_detail_api_v1_reports__reference__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: reference
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Reference
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reports/{reference}/evidence:
+    post:
+      tags:
+      - reports
+      summary: Validate evidence upload (storage awaits schema/auth integration)
+      operationId: upload_evidence_api_v1_reports__reference__evidence_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: reference
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Reference
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_evidence_api_v1_reports__reference__evidence_post'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Evidence validation failed
+        '503':
+          description: Private storage integration is unavailable
+  /api/v1/credentials/me:
+    get:
+      tags:
+      - credentials
+      summary: Validate Supabase access token and return minimal identity claims
+      operationId: me_api_v1_credentials_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/committees:
+    get:
+      tags:
+      - committees
+      summary: List authorized committees
+      operationId: list_committees_api_v1_committees_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/challenges:
+    post:
+      tags:
+      - challenges
+      summary: Create Challenge
+      operationId: create_challenge_api_v1_challenges_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/challenges/{challenge_id}/decision:
+    post:
+      tags:
+      - challenges
+      summary: Decide Challenge
+      operationId: decide_challenge_api_v1_challenges__challenge_id__decision_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: challenge_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Challenge Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeDecision'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/witnesses/invitations:
+    post:
+      tags:
+      - witnesses
+      summary: Invite Witness
+      operationId: invite_witness_api_v1_witnesses_invitations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WitnessInvitationCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/witnesses/invitations/validate:
+    post:
+      tags:
+      - witnesses
+      summary: Validate Invitation
+      operationId: validate_invitation_api_v1_witnesses_invitations_validate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WitnessTokenValidation'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/messages:
+    post:
+      tags:
+      - messages
+      summary: Send Message
+      operationId: send_message_api_v1_messages_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/messages/{report_reference}:
+    get:
+      tags:
+      - messages
+      summary: List Messages
+      operationId: list_messages_api_v1_messages__report_reference__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: report_reference
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Reference
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/audit:
+    get:
+      tags:
+      - audit
+      summary: Timeline
+      operationId: timeline_api_v1_audit_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/notifications/status:
+    get:
+      tags:
+      - notifications
+      summary: Notification Status
+      operationId: notification_status_api_v1_notifications_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/exports/{report_reference}.pdf:
+    get:
+      tags:
+      - exports
+      summary: Export Report
+      operationId: export_report_api_v1_exports__report_reference__pdf_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: report_reference
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Reference
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/integrations/blockchain/status/{operation_id}:
+    get:
+      tags:
+      - blockchain (development stub)
+      summary: Poll blockchain status (development stub always remains pending)
+      operationId: operation_status_api_v1_integrations_blockchain_status__operation_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Operation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      tags:
+      - health
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    Body_upload_evidence_api_v1_reports__reference__evidence_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_upload_evidence_api_v1_reports__reference__evidence_post
+    ChallengeCreate:
+      properties:
+        report_reference:
+          type: string
+          maxLength: 80
+          minLength: 8
+          title: Report Reference
+        reason:
+          type: string
+          maxLength: 2000
+          minLength: 10
+          title: Reason
+        requested_action:
+          type: string
+          enum:
+          - reassign
+          - recusal
+          title: Requested Action
+      type: object
+      required:
+      - report_reference
+      - reason
+      - requested_action
+      title: ChallengeCreate
+    ChallengeDecision:
+      properties:
+        decision:
+          type: string
+          enum:
+          - accepted
+          - rejected
+          title: Decision
+        rationale:
+          type: string
+          maxLength: 2000
+          minLength: 10
+          title: Rationale
+      type: object
+      required:
+      - decision
+      - rationale
+      title: ChallengeDecision
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    MessageCreate:
+      properties:
+        report_reference:
+          type: string
+          maxLength: 80
+          minLength: 8
+          title: Report Reference
+        body:
+          type: string
+          maxLength: 5000
+          minLength: 1
+          title: Body
+        thread_token:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Thread Token
+      type: object
+      required:
+      - report_reference
+      - body
+      title: MessageCreate
+    ReportCreate:
+      properties:
+        title:
+          type: string
+          maxLength: 160
+          minLength: 5
+          title: Title
+        narrative:
+          type: string
+          maxLength: 20000
+          minLength: 20
+          title: Narrative
+        category:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Category
+        anonymous:
+          type: boolean
+          title: Anonymous
+          default: true
+      type: object
+      required:
+      - title
+      - narrative
+      - category
+      title: ReportCreate
+    ReportReceipt:
+      properties:
+        reference:
+          type: string
+          title: Reference
+        status:
+          type: string
+          title: Status
+        blockchain_status:
+          type: string
+          title: Blockchain Status
+          default: pending
+      type: object
+      required:
+      - reference
+      - status
+      title: ReportReceipt
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WitnessInvitationCreate:
+      properties:
+        report_reference:
+          type: string
+          maxLength: 80
+          minLength: 8
+          title: Report Reference
+        contact:
+          type: string
+          maxLength: 320
+          minLength: 5
+          title: Contact
+      type: object
+      required:
+      - report_reference
+      - contact
+      title: WitnessInvitationCreate
+    WitnessTokenValidation:
+      properties:
+        token:
+          type: string
+          maxLength: 128
+          minLength: 32
+          title: Token
+      type: object
+      required:
+      - token
+      title: WitnessTokenValidation
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
