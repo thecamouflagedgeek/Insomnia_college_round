@@ -2,8 +2,13 @@ from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-def investigation_pdf(title: str, sections: list[tuple[str, str]], manifest: list[dict]) -> bytes:
-    out = BytesIO(); pdf = canvas.Canvas(out, pagesize=letter); width, height = letter
+
+def investigation_pdf(title: str, sections: list[tuple[str, str]], manifest: list[dict], compress: bool = True) -> bytes:
+    out = BytesIO()
+    pdf = canvas.Canvas(out, pagesize=letter)
+    if not compress:
+        pdf.setPageCompression(0)
+    width, height = letter
     y = height - 54
     pdf.setTitle("Redacted Investigation Export")
     pdf.drawString(48, y, title[:140]); y -= 28

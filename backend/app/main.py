@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from app.core.config import get_settings
 from app.core.database import Database
 from app.api import reports, credentials, committees, challenges, witnesses, messages, audit, notifications, exports, integrations
@@ -14,6 +15,17 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origins, allow
 
 for route in (reports.router, credentials.router, committees.router, challenges.router, witnesses.router, messages.router, audit.router, notifications.router, exports.router, integrations.router):
     app.include_router(route, prefix="/api/v1")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # Remove input from validation errors to prevent sensitive data leakage
+    sanitized_errors = []
+    for error in exc.errors():
+        sanitized = {k: v for k, v in error.items() if k != "input"}
+        sanitized_errors.append(sanitized)
+    return JSONResponse(status_code=422, content={"detail": sanitized_errors})
+
 
 @app.exception_handler(Exception)
 async def safe_unhandled_error(request: Request, exc: Exception):

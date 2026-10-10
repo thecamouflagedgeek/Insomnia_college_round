@@ -1,3 +1,115 @@
-"""Messaging workflows await verified thread and participant authorization schema."""
-from app.core.database import IntegrationUnavailable
-def unavailable(): raise IntegrationUnavailable("Messaging persistence is disabled until thread authorization is verified")
+"""Investigation messaging with encrypted message bodies."""
+from __future__ import annotations
+
+import time
+from uuid import uuid4
+from dataclasses import dataclass
+from typing import Any
+from app.core.database import Database, IntegrationUnavailable, TestRecord
+from app.core.config import get_settings
+from app.services.encryption_service import get_encryption_service, EncryptedField
+from app.models.message import InvestigationMessage
+
+
+@dataclass(frozen=True)
+class CreatedMessage:
+    message_id: str
+    report_reference: str
+    encrypted_body: EncryptedField
+    created_at: int
+
+
+def send_investigation_message(report_reference: str, body: str, thread_token: str | None = None) -> CreatedMessage:
+    """Send an investigation message with encrypted body.
+
+    Args:
+        report_reference: The report this message belongs to
+        body: Message content
+        thread_token: Optional thread identifier for grouping messages
+
+    Returns:
+        CreatedMessage with encrypted body
+    """
+    settings = get_settings()
+    db = Database.from_settings(settings)
+
+    message_id = str(uuid4())
+    created_at = int(time.time())
+
+    # Encrypt message body
+    encryption_service = get_encryption_service()
+    encrypted_body = encryption_service.encrypt_message_body(message_id, body)
+
+    # Create message record
+    message = InvestigationMessage(
+        message_id=message_id,
+        report_reference=report_reference,
+        encrypted_body=encrypted_body.ciphertext,
+    )
+
+    if db._test_mode:
+        test_record = TestRecord(
+            id=uuid4(),
+            data={
+                "message_id": message_id,
+                "report_reference": report_reference,
+                "encrypted_body": encrypted_body.ciphertext,
+                "body_aad": encrypted_body.associated_data,
+                "thread_token": thread_token,
+                "created_at": created_at,
+            },
+        )
+        db.test_insert("investigation_messages", test_record)
+    else:
+        client = db.require_schema()
+        raise IntegrationUnavailable("Production persistence not yet implemented")
+
+    return CreatedMessage(
+        message_id=message_id,
+        report_reference=report_reference,
+        encrypted_body=encrypted_body,
+        created_at=created_at,
+    )
+
+
+def list_investigation_messages(report_reference: str, db: Database | None = None) -> list[CreatedMessage]:
+    """List all messages for a report (after authorization check).
+
+    Args:
+        report_reference: The report to get messages for
+        db: Optional database instance
+
+    Returns:
+        List of CreatedMessage objects
+    """
+    if db is None:
+        settings = get_settings()
+        db = Database.from_settings(settings)
+
+    if db._test_mode:
+        messages = []
+        for record in db.test_list("investigation_messages"):
+            if record.data.get("report_reference") == report_reference:
+                data = record.data
+                encrypted_body = EncryptedField(
+                    ciphertext=data["encrypted_body"],
+                    associated_data=data["body_aad"],
+                )
+                messages.append(CreatedMessage(
+                    message_id=data["message_id"],
+                    report_reference=data["report_reference"],
+                    encrypted_body=encrypted_body,
+                    created_at=data["created_at"],
+                ))
+        # Sort by creation time
+        messages.sort(key=lambda m: m.created_at)
+        return messages
+    else:
+        client = db.require_schema()
+        raise IntegrationUnavailable("Production retrieval not yet implemented")
+
+
+def decrypt_message_body(message: CreatedMessage) -> str:
+    """Decrypt message body after authorization check."""
+    encryption_service = get_encryption_service()
+    return encryption_service.decrypt_message_body(message.message_id, message.encrypted_body)
