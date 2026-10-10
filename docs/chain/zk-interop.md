@@ -50,3 +50,45 @@ Pinned SDK: `zkmopro/semaphore_flutter` @ `<commit sha>`
 | Points packing needed? | _record here_ |
 | Proof time on phone | _record here_ |
 | Spike tx hashes | _record here_ |
+
+## Backend integration (M3)
+
+```python
+# app/main.py
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from fastapi import FastAPI
+from app.chain.config import ChainSettings
+from app.chain.hashing import content_sha256
+from app.chain.routes import build_router, complaint_scope_texts
+from app.chain.services import build_services, start_anchorer
+from app.chain.semaphore import ProofIn
+from app.chain.zk_service import ProofRejected
+
+@asynccontextmanager
+async def lifespan(app):
+    app.state.chain = build_services(ChainSettings.from_env())
+    stop = start_anchorer(app.state.chain)
+    yield
+    stop()
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(build_router(enroll_guard=require_role("hr"), case_guard=require_case_access))  # M2's guards
+
+# Complaint submission. Body: {"payload": "<json string>", "proof": ProofIn}
+try:
+    ok = app.state.chain.zk.verify_submission(
+        body.proof, body.payload, complaint_scope_texts(datetime.now(timezone.utc).date()), "complaint")
+except ProofRejected as exc:
+    raise HTTPException(400, {"reason": exc.reason})   # replay / invalid_proof / unknown_root → Claim Integrity
+# store body.payload verbatim in complaints.raw_payload (+ complaints.case_id), then:
+app.state.chain.audit.record(case_id, "complaint_submitted", {
+    "content_sha256": content_sha256(body.payload.encode()), "nullifier": str(ok.nullifier), "proof_tx": ok.tx_hash})
+```
+
+- `verify_submission` waits for an Amoy tx (~2–6 s). The phone shows "Verifying on-chain…".
+- Committee challenge: same pattern with `[challenge_scope_text(case_id, member_id)]` and kind `"challenge"`.
+- Call `app.state.chain.audit.record(case_id, <event_type>, {...})` at every workflow step. Allowed types and their
+  data fields are in `backend/app/chain/audit_log.py::EVENT_TYPES`. Data is IDs, enums and hashes only. No names,
+  no free text, no floats.
+- Required table on M3's side: `complaints(case_id text, raw_payload text, ...)`.
