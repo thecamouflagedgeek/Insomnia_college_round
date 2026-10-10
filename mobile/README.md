@@ -1,5 +1,25 @@
 # INCOGNITO employee mobile app
 
+## Current live proving integration (2026-10-11)
+
+Live mode uses the official Semaphore JS SDK 4.14.3 inside a hidden native WebView.
+The bundled HTML is included; Node is only needed to rebuild it. See
+`../tools/webprover/README.md` for build and fork/device checks.
+
+`APP_MODE=live` defaults to `ZK_PROVER=webview`; explicitly set `ZK_PROVER=offline`
+for the offline stub. Switching provers changes the commitment, so verify membership
+again with an invite code. The existing secure-storage identity bytes are reused;
+private keys stay on the phone. Release API transport must use HTTPS.
+
+Tell Your Story uses labelled local fixtures in both modes. No classification
+request or report occurs during understanding. After explicit confirmation, live
+submission uses the agreed `/reports` contract and uploads attachments only after
+acceptance. Backend classification remains disabled until its transport and
+no-retention guarantees are approved and verified.
+
+The development notes below describe earlier milestones; current validation is
+recorded in `../docs/chain/zk-interop.md`.
+
 Flutter employee experience with a shared lavender design system. Changes are confined to this folder.
 
 ## Run

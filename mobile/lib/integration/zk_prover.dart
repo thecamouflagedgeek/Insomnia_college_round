@@ -8,8 +8,7 @@ import 'signals.dart';
 
 /// The phone's Semaphore identity and proof generation. Two implementations:
 /// - [OfflineProver] (here): no cryptography; for the stub's CHAIN_MODE=offline and widget tests.
-/// - SemaphoreProver (mobile/integration/semaphore_prover.dart.example): the Semaphore Flutter SDK, for
-///   CHAIN_MODE=live. Copy it into lib/integration once the `semaphore` package builds on your machine.
+/// - WebViewProver (webview_prover.dart): the pinned official JavaScript library, for CHAIN_MODE=live.
 abstract interface class ZkProver {
   /// Decimal identity commitment; the only identity-derived value that ever leaves the phone (at enrolment).
   Future<String> commitment();

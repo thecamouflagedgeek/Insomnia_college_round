@@ -8,12 +8,21 @@ import 'package:mobile/data/repository.dart';
 import 'package:mobile/integration/api_client.dart';
 import 'package:mobile/integration/live_providers.dart';
 import 'package:mobile/integration/secret_store.dart';
+import 'package:mobile/integration/zk_prover.dart';
+import 'package:mobile/features/story/story_state.dart';
 import 'package:mobile/screens/employee_screens.dart';
 
 class FakeApi extends IncognitoApi {
   FakeApi() : super('http://fake');
   final members = <String>[];
   final codes = <String>[];
+  int classificationRequests = 0;
+
+  @override
+  Future<Json> classify(String text) async {
+    classificationRequests++;
+    throw StateError('Private understanding must not contact classification.');
+  }
 
   @override
   Future<Json> enroll(String commitment, String enrollCode) async {
@@ -44,6 +53,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         secretStoreProvider.overrideWithValue(MemorySecretStore()),
+        zkProverProvider.overrideWith(
+          (ref) => OfflineProver(ref.watch(identityKeyProvider)),
+        ),
         incognitoApiProvider.overrideWithValue(api),
       ],
     );
@@ -80,6 +92,49 @@ void main() {
     expect(container.read(sessionProvider), isTrue);
     expect(find.byType(BiometricScreen), findsOneWidget);
   }, skip: skip != false);
+
+  testWidgets(
+    'private understanding never sends a narrative to classification',
+    (tester) async {
+      final (container, api) = await pumpApp(tester, '/verify');
+      container.read(sessionProvider.notifier).enter();
+      container.read(routerProvider).go('/story');
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('story-narrative')),
+        'A private workplace experience.',
+      );
+      await tester.scrollUntilVisible(
+        find.text('Continue Understanding'),
+        240,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('Continue Understanding'));
+      await tester.pumpAndSettle();
+      expect(container.read(storyProvider).understanding, isTrue);
+      expect(api.classificationRequests, 0);
+      await tester.scrollUntilVisible(
+        find.text('Discard Privately'),
+        240,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('Discard Privately'));
+      await tester.pumpAndSettle();
+      expect(container.read(storyProvider).narrative, isEmpty);
+      expect(api.classificationRequests, 0);
+    },
+    skip: skip != false,
+  );
 
   testWidgets('challenge screen lists the case committee from the API', (
     tester,

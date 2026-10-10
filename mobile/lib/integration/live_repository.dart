@@ -178,7 +178,7 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     'title': title,
     'description': description,
     'incident_date': DateFormat('yyyy-MM-dd').format(date),
-  }, files.map((p) => (path: p, name: p.split(Platform.pathSeparator).last)));
+  }, files.map((p) => (path: p, name: p.replaceAll(r'\', '/').split('/').last)));
 
   @override
   Future<Report> submitStory(StorySubmission submission) => _submit(

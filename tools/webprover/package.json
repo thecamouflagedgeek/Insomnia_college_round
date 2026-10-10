@@ -1,0 +1,8 @@
+{
+  "name": "incognito-webprover",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "node build.mjs", "test": "node --test test/*.test.mjs", "test:chrome": "node test/chrome.mjs"},
+  "dependencies": {"@semaphore-protocol/core": "4.14.3"},
+  "devDependencies": {"esbuild": "0.25.12", "puppeteer-core": "24.37.2"}
+}

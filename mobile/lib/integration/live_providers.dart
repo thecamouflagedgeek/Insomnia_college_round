@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../features/story/story_state.dart';
 import 'api_client.dart';
 import 'live_repository.dart';
 import 'reporter_zk.dart';
 import 'secret_store.dart';
 import 'zk_prover.dart';
+import 'webview_prover.dart';
 
 /// `--dart-define=API_BASE_URL=http://<dev machine>:8000` (default: the Android emulator's host loopback).
 const apiBaseUrl = String.fromEnvironment(
@@ -22,11 +24,17 @@ final identityKeyProvider = Provider(
 );
 final incognitoApiProvider = Provider((ref) => IncognitoApi(apiBaseUrl));
 
-/// OfflineProver works against the stub's CHAIN_MODE=offline. For CHAIN_MODE=live, override with
-/// SemaphoreProver (mobile/integration/semaphore_prover.dart.example).
-final zkProverProvider = Provider<ZkProver>(
-  (ref) => OfflineProver(ref.watch(identityKeyProvider)),
-);
+/// Real local WebView proving by default. ZK_PROVER=offline is for the offline stub only.
+final zkProverProvider = Provider<ZkProver>((ref) {
+  final key = ref.watch(identityKeyProvider);
+  if (const String.fromEnvironment('ZK_PROVER', defaultValue: 'webview') !=
+      'webview') {
+    return OfflineProver(key);
+  }
+  final prover = WebViewProver(key);
+  ref.onDispose(() => unawaited(prover.dispose()));
+  return prover;
+});
 
 final reporterZkProvider = Provider(
   (ref) =>
@@ -38,16 +46,6 @@ final reporterZkProvider = Provider(
 /// final repositoryProvider = Provider<EmployeeRepository>(
 ///   (ref) => demoEnabled ? DemoRepository() : ref.watch(liveRepositoryProvider));
 /// ```
-/// Live category suggestions for a narrative; cached per text so selections keep their identity.
-final liveSuggestionsProvider = FutureProvider.family((
-  ref,
-  String narrative,
-) async {
-  final repo = ref.watch(liveRepositoryProvider);
-  final suggestions = await repo.suggest(narrative);
-  return suggestions.isEmpty ? demoSuggestions : suggestions;
-});
-
 final liveRepositoryProvider = Provider(
   (ref) => LiveRepository(
     ref.watch(incognitoApiProvider),

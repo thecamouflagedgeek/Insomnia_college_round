@@ -45,11 +45,26 @@ Pinned SDK: `zkmopro/semaphore_flutter` @ `<commit sha>`
 
 | Item | Value |
 |---|---|
-| SDK commit | _record here_ |
-| `ZK_SIGNAL_MODE` | _record here_ |
-| Points packing needed? | _record here_ |
-| Proof time on phone | _record here_ |
-| Spike tx hashes | _record here_ |
+| SDK | Official `@semaphore-protocol/core` pinned **4.14.3**, bundled in `mobile/assets/prover/prover.html` |
+| `ZK_SIGNAL_MODE` | `text`: UTF-8 text right-padded to bytes32; Chrome proof signals checked byte-for-byte |
+| Points packing needed? | None: official SDK exports eight Solidity-packed decimal strings |
+| Proof time on phone | **6.235 s first proof, 1.157 s next proof** on Samsung SM A356E, Android 16/API 36, Android System WebView 154.0.8037.106; debug build. Times wrap native `prove()` only, exclude backend transactions; first proof includes public artifact loading |
+| Chrome proof | Official `verifyProof` accepted; root mismatch rejected before artifact downloads; latest cold proof 7.515 s including two public artifact downloads |
+| Local Amoy fork | Chain ID 31337, fresh test-owned group 24 and registry. Browser report/challenge accepted; daily and challenge nullifier replay rejected; six audit events verified |
+| Replay API behavior | Exact duplicate report: 422 `claim_integrity` before ZK check. Different correctly bound payload with same daily nullifier: 400 `replay`. Challenge replay: 400 `replay` |
+| Network | Inline bundle; only public artifacts fetched from HTTPS `snark-artifacts.pse.dev`. No keys or narrative sent there; diagnostic proof/console logging disabled |
+| Physical device journey | `integration_test/webview_fork_test.dart` passed: secure-storage identity, native headless WebView, enrollment screen, real report and challenge through LiveRepository, verified audit rendered on the Samsung |
+| Validation | Flutter analysis clean; demo 18 passed (4 opt-in skips); live UI 3 passed; Node 3 passed; backend pytest 177 passed / 11 skipped; Chrome and physical-device fork tests passed |
+
+Validation was performed on 2026-10-11 against the unchanged backend verifier/API.
+The publicnode endpoint could not supply historical storage for the fork; the successful
+isolated test used `https://polygon-amoy.gateway.tenderly.co`. No relayer key or paid remote
+transaction was used. Reproduction and the device test are in `tools/webprover/README.md`.
+
+Public **local-fork-only** transaction hashes from the browser spike:
+report `0xb7a5328a09a0049d56dacf2a3d8f5d48a5d5d3ba3a5e007c8f0d9e2a23aa9f07`,
+challenge `0xcd1b15234bb0c2fb591d984c80240a3f16d7600762880b4c63f92c5c13217581`.
+These are local Anvil transactions, not transactions on the public Amoy explorer.
 
 ## Backend integration (M3)
 

@@ -7,7 +7,6 @@ import '../../data/repository.dart';
 import '../../widgets/components.dart';
 import '../../core/theme.dart';
 import '../../integration/errors.dart';
-import '../../integration/live_providers.dart';
 import 'story_state.dart';
 
 class TellYourStoryScreen extends ConsumerStatefulWidget {
@@ -84,24 +83,15 @@ class _TellYourStoryScreenState extends ConsumerState<TellYourStoryScreen> {
             draft.narrative.trim().isEmpty ? null : session.understand,
           ),
           if (draft.understanding) ...[
-            HintCard(
-              modeText(
-                'Demonstration guidance only. These are fixed examples, not classifications inferred from your words. No model or external AI service reads your narrative. More than one concern may be relevant—or none may be clear.',
-                'These suggestions come from keyword matching on the INCOGNITO server. Your words are not stored or logged, and nothing is reported until you confirm. More than one concern may be relevant—or none may be clear.',
-              ),
+            const HintCard(
+              'Demonstration guidance only. These are fixed examples, not classifications inferred from your words. No model or external AI service reads your narrative. More than one concern may be relevant—or none may be clear.',
             ),
             Text(
               'Possible ways to understand a concern',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            for (final suggestion
-                in demoEnabled
-                    ? demoSuggestions
-                    : ref
-                              .watch(liveSuggestionsProvider(draft.narrative))
-                              .value ??
-                          const <ClassificationSuggestion>[])
+            for (final suggestion in demoSuggestions)
               SoftCard(
                 onTap: () => session.toggle(suggestion),
                 child: Column(
@@ -324,8 +314,11 @@ class _StoryReviewScreenState extends ConsumerState<StoryReviewScreen> {
               ],
             ),
           ),
-          const HintCard(
-            'Demo submission stores the exact narrative, suggested categories and attachment names in a local case. File contents are not uploaded. Live POST /reports and evidence submission remain pending an agreed contract. No HR-visible record is created by this demo.',
+          HintCard(
+            modeText(
+              'Demo submission stores the exact narrative, suggested categories and attachment names in a local case. File contents are not uploaded. Live POST /reports and evidence submission remain pending an agreed contract. No HR-visible record is created by this demo.',
+              'Submitting sends the exact reviewed story and selected categories as a formal anonymous report. Selected attachments upload after the report is accepted. The assigned investigation team can then access this case.',
+            ),
           ),
           CheckboxListTile(
             key: const Key('story-confirm'),
@@ -334,13 +327,19 @@ class _StoryReviewScreenState extends ConsumerState<StoryReviewScreen> {
                 ? null
                 : (v) => setState(() => confirmed = v ?? false),
             contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'I explicitly choose to submit the reviewed story as a demo report.',
+            title: Text(
+              modeText(
+                'I explicitly choose to submit the reviewed story as a demo report.',
+                'I explicitly choose to submit the reviewed story and attachments as a formal report.',
+              ),
             ),
           ),
           if (error != null) HintCard(error!),
           ActionButton(
-            'Confirm and submit demo report',
+            modeText(
+              'Confirm and submit demo report',
+              'Confirm and submit report',
+            ),
             confirmed && draft.narrative.trim().isNotEmpty ? submit : null,
             busy: busy,
           ),

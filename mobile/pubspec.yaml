@@ -18,9 +18,17 @@ dependencies:
   flutter_dotenv: ^5.2.1
   google_fonts: ^6.3.0
   crypto: ^3.0.6
+  flutter_inappwebview: ^6.0.0
+dependency_overrides:
+  flutter_inappwebview_android:
+    path: vendor/flutter_inappwebview_android
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/prover/prover.html

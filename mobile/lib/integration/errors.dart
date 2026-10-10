@@ -1,6 +1,7 @@
 import 'api_client.dart';
 import 'reporter_zk.dart';
 import 'zk_prover.dart';
+import 'webview_prover.dart';
 
 /// User-facing text for integration failures. Never includes server internals or identifiers.
 String friendlyError(
@@ -12,6 +13,9 @@ String friendlyError(
   }
   if (error is GroupRootMismatch) {
     return 'The member list changed while preparing your proof. Please try again.';
+  }
+  if (error is ProverFailure) {
+    return 'Could not prepare your membership proof on this phone. Check your connection and try again.';
   }
   if (error is ApiFailure) {
     return switch (error.reason) {

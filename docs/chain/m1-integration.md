@@ -8,7 +8,7 @@ implements the same `EmployeeRepository` / `StoryReportRepository` interfaces as
 | API contract (the `shared/api-contract.yaml` the mobile README was waiting for) | `shared/api-contract.yaml` |
 | Stub backend that serves it (until M3's backend lands) | `backend/app/stub/` |
 | Dart integration layer | `mobile/lib/integration/` |
-| Real ZK prover (needs the Semaphore SDK) | `mobile/integration/semaphore_prover.dart.example` |
+| Real ZK prover (pinned JS SDK in a hidden native WebView) | `mobile/lib/integration/webview_prover.dart`, `tools/webprover/` |
 
 ## What has been verified
 
@@ -22,8 +22,12 @@ implements the same `EmployeeRepository` / `StoryReportRepository` interfaces as
 | `SemaphoreProver` against the real SDK API | Type-checks (`flutter analyze`) with the SDK added |
 | **Semaphore SDK engine on-chain** | Proofs from `semaphore-protocol` 0.1.0 (the Rust engine inside the Flutter SDK), sent through the stub to the real Semaphore V4 contract on an Amoy fork: accepted. Replay refused; challenge proof accepted; 7 audit events anchored and verified. Same identity commitments as the JS library. Proof time 0.1–0.3 s on a laptop |
 
-Not verified: proving on a real phone. The Semaphore Flutter SDK does not build from public code (section 3), so real
-ZK on the phone goes through the WebView + JS prover, whose proofs are already verified against the contract.
+Physical phone verification completed on 2026-10-11: Samsung SM A356E, Android 16,
+native WebView 154.0.8037.106. Enrollment screen, real report and challenge, and the
+rendered verified audit passed against a fresh test-owned group 24 on an isolated
+Amoy fork (chain ID 31337). Native proof timings: 6.235 s first, 1.157 s next.
+Group 23 on public Amoy was not used; no paid remote transactions occurred.
+Reproduction: `tools/webprover/README.md`; detailed findings: `zk-interop.md`.
 
 ## 1. Run the stub
 
@@ -68,9 +72,12 @@ default, so M1's existing tests and copy are untouched; `modeText(demo, live)` p
 | Settings | "Forget my cases on this phone" clears case tokens (membership stays) |
 | Errors | `friendlyError()` maps API reasons (replay, bad code, network, …) to plain text |
 
-Still demo-only: the "Tell Your Story" category suggestions are fixed examples (the API has `POST /classify` for
-M3's model), and real ZK proofs need the WebView prover (section 3); until then live mode uses `OfflineProver`,
-which only the stub's `CHAIN_MODE=offline` accepts.
+Live mode now defaults to `WebViewProver` using the bundled official JS SDK 4.14.3.
+Use `--dart-define=ZK_PROVER=offline` only against `CHAIN_MODE=offline`. Phones previously
+enrolled with the offline prover must verify membership again because the commitment changes.
+Tell Your Story keeps its narrative and selected fixed demonstration guidance locally until
+explicit submission; it does not call `/classify`. Backend classification requires an agreed
+stateless HTTPS contract and verified no-retention behavior before enabling it.
 
 Tests: `flutter test` (demo, 14 pass); `flutter test test/integration/live_ui_test.dart --dart-define=APP_MODE=live`
 (live screens, fake API); `flutter test test/integration --dart-define=INCOGNITO_STUB_URL=http://127.0.0.1:8010`
@@ -83,7 +90,7 @@ M3's `/api/v1` app (`backend/app/main.py`) is kept as-is for its Supabase path; 
 
 | Feature | Where |
 |---|---|
-| Classification (M3 classifier) | `POST /classify`; app "Tell Your Story" suggestions in live mode |
+| Classification (M3 classifier) | `POST /classify` exists; private Tell Your Story uses local fixtures pending approved transport/privacy verification |
 | Severity (M3 engine + category floor) | On submit, audited; dashboard severity badge and signals |
 | Claim Integrity (M3 checks + duplicates) | On submit, before the proof (422 `claim_integrity`, nullifier not spent) |
 | Incident Correlation, Repeat Allegations | `GET /hr/cases/{id}/related`, `GET /hr/patterns`; dashboard Pattern Intelligence and case page |
