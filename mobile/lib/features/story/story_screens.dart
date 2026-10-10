@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../widgets/components.dart';
 import '../../core/theme.dart';
+import '../../integration/errors.dart';
 import 'story_state.dart';
 
 class TellYourStoryScreen extends ConsumerStatefulWidget {
@@ -204,10 +205,13 @@ class _StoryReviewScreenState extends ConsumerState<StoryReviewScreen> {
           .read(storyProvider.notifier)
           .submit(explicitlyConfirmed: confirmed);
       if (mounted) context.go('/success', extra: report);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(
-          () => error = 'Submission did not complete. Your temporary story remains here. No success has been confirmed; retry only when ready.',
+          () => error = friendlyError(
+            e,
+            fallback: 'Submission did not complete. Your temporary story remains here. No success has been confirmed; retry only when ready.',
+          ),
         );
       }
     } finally {

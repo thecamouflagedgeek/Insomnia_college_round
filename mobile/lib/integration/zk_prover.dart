@@ -53,10 +53,12 @@ class OfflineProver implements ZkProver {
   OfflineProver(this._key);
   final IdentityKey _key;
 
-  BigInt _hash(List<int> bytes) => BigInt.parse(sha256.convert(bytes).toString(), radix: 16) >> 8;
+  BigInt _hash(List<int> bytes) =>
+      BigInt.parse(sha256.convert(bytes).toString(), radix: 16) >> 8;
 
   @override
-  Future<String> commitment() async => _hash([...await _key.load(), 1]).toString();
+  Future<String> commitment() async =>
+      _hash([...await _key.load(), 1]).toString();
 
   @override
   Future<Map<String, dynamic>> prove({

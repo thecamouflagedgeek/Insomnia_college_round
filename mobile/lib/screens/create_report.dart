@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../data/repository.dart';
 import '../widgets/components.dart';
 import '../core/theme.dart';
+import '../integration/errors.dart';
 
 class EvidenceSelection {
   EvidenceSelection(this.name, this.size, this.path, this.image);
@@ -98,13 +99,21 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
             title.text.trim(),
             description.text.trim(),
             date,
-            files.map((f) => f.name).toList(),
+            files
+                .map((f) => demoEnabled ? f.name : (f.path ?? f.name))
+                .toList(),
           );
       ref.invalidate(reportsProvider);
       if (mounted) context.pushReplacement('/success', extra: report);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        feedback(context, 'Submission failed. Your draft remains here.');
+        feedback(
+          context,
+          friendlyError(
+            e,
+            fallback: 'Submission failed. Your draft remains here.',
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -219,8 +228,11 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
         ),
       ],
       if (step == 2) ...[
-        const HintCard(
-          'Evidence is optional. Demo selections are not uploaded, sealed, or placed in public storage. Upload progress and retries require the agreed upload contract.',
+        HintCard(
+          modeText(
+            'Evidence is optional. Demo selections are not uploaded, sealed, or placed in public storage. Upload progress and retries require the agreed upload contract.',
+            'Evidence is optional. Files upload after your report is accepted and are sealed with a hash anchored on Polygon. Remove names or faces you do not need to share.',
+          ),
         ),
         ActionButton('Choose an image', () => pick(true)),
         ActionButton('Choose a document', () => pick(false)),
@@ -279,8 +291,11 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
             ],
           ),
         ),
-        const HintCard(
-          'This creates a local demo case only. There is no backend acceptance, upload, or cryptographic seal. Demo data disappears when the session is cleared or the app closes.',
+        HintCard(
+          modeText(
+            'This creates a local demo case only. There is no backend acceptance, upload, or cryptographic seal. Demo data disappears when the session is cleared or the app closes.',
+            'Your phone proves you are an employee without saying which one, and the proof is checked on Polygon. This takes a few seconds. One report per day.',
+          ),
         ),
       ],
       if (step > 0)
@@ -289,7 +304,9 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
           child: const Text('Previous step'),
         ),
       ActionButton(
-        step == 3 ? 'Create local demo report' : 'Continue',
+        step == 3
+            ? modeText('Create local demo report', 'Submit anonymously')
+            : 'Continue',
         step == 0 && category == null
             ? null
             : () {
@@ -320,14 +337,17 @@ class SuccessScreen extends StatelessWidget {
             const SizedBox(height: 24),
             Text(report.id, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
-            const Text(
-              'Local demo report created.\nBackend acceptance: unavailable.\nEvidence seal: unavailable.',
+            Text(
+              modeText(
+                'Local demo report created.\nBackend acceptance: unavailable.\nEvidence seal: unavailable.',
+                'Report accepted and sealed on Polygon.\nKeep this phone: it holds the only key to this case.',
+              ),
             ),
           ],
         ),
       ),
       ActionButton(
-        'View your demo case',
+        modeText('View your demo case', 'View your case'),
         () => context.go('/case/${report.id}', extra: report),
       ),
       ActionButton('Back to home', () => context.go('/home')),

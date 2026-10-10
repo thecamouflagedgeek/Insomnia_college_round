@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 import '../data/repository.dart';
 import '../widgets/components.dart';
 import '../core/theme.dart';
+import '../integration/errors.dart';
+import '../integration/live_providers.dart';
+import '../integration/live_repository.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -56,39 +59,123 @@ class WelcomeScreen extends StatelessWidget {
   );
 }
 
-class VerificationScreen extends ConsumerWidget {
+class VerificationScreen extends ConsumerStatefulWidget {
   const VerificationScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => PageShell(
-    title: 'Belong.\nWithout being exposed.',
-    children: [
-      const HintCard(
-        'Anonymous membership verification is integration pending. An organization login is not an anonymous membership proof.',
-      ),
-      const SoftCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.verified_user_outlined, color: purple, size: 36),
-            SizedBox(height: 18),
-            Text('Waiting for the verification contract'),
-            SizedBox(height: 8),
-            Text(
-              'The backend and ZKP teams must provide the enrollment mechanism, credential format, expiry, and authorization rules.',
+  ConsumerState<VerificationScreen> createState() => _VerificationScreenState();
+}
+
+class _VerificationScreenState extends ConsumerState<VerificationScreen> {
+  final code = TextEditingController();
+  bool busy = false;
+  bool? enrolled;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!demoEnabled) {
+      ref
+          .read(reporterZkProvider)
+          .isEnrolled()
+          .then((v) => mounted ? setState(() => enrolled = v) : null)
+          .catchError((_) => null);
+    }
+  }
+
+  @override
+  void dispose() {
+    code.dispose();
+    super.dispose();
+  }
+
+  void enter() {
+    ref.read(sessionProvider.notifier).enter();
+    context.go('/biometric');
+  }
+
+  Future<void> verify() async {
+    if (code.text.trim().isEmpty) return;
+    setState(() => busy = true);
+    try {
+      await ref.read(reporterZkProvider).enroll(code.text.trim());
+      if (mounted) enter();
+    } catch (e) {
+      if (mounted) feedback(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (demoEnabled) {
+      return PageShell(
+        title: 'Belong.\nWithout being exposed.',
+        children: [
+          const HintCard(
+            'Anonymous membership verification is integration pending. An organization login is not an anonymous membership proof.',
+          ),
+          const SoftCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.verified_user_outlined, color: purple, size: 36),
+                SizedBox(height: 18),
+                Text('Waiting for the verification contract'),
+                SizedBox(height: 8),
+                Text(
+                  'The backend and ZKP teams must provide the enrollment mechanism, credential format, expiry, and authorization rules.',
+                ),
+              ],
             ),
-          ],
+          ),
+          ActionButton('Explore the labelled demo', () {
+            ref.read(sessionProvider.notifier).enterDemo();
+            context.go('/biometric');
+          }),
+          const Text(
+            'Demo mode does not verify membership or create an anonymous credential.',
+          ),
+        ],
+      );
+    }
+    return PageShell(
+      title: 'Belong.\nWithout being exposed.',
+      children: [
+        const HintCard(
+          'Your phone creates a private key that never leaves it. Only a one-way commitment joins the employee group on Polygon, so reports prove you are an employee without revealing which one.',
         ),
-      ),
-      if (demoEnabled)
-        ActionButton('Explore the labelled demo', () {
-          ref.read(sessionProvider.notifier).enterDemo();
-          context.go('/biometric');
-        }),
-      const Text(
-        'Demo mode does not verify membership or create an anonymous credential.',
-      ),
-    ],
-  );
+        if (enrolled == true) ...[
+          const SoftCard(
+            child: Row(
+              children: [
+                Icon(Icons.verified_user, color: purple, size: 36),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Text('This phone is already a verified member.'),
+                ),
+              ],
+            ),
+          ),
+          ActionButton('Continue', enter),
+        ] else ...[
+          TextField(
+            controller: code,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'Invite code from HR',
+              hintText: 'One-time code',
+            ),
+          ),
+          const SizedBox(height: 16),
+          ActionButton('Verify membership', verify, busy: busy),
+          const Text(
+            'HR knows a code was used, not which reports you file. Verification is recorded on Polygon and can take a few seconds.',
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class BiometricScreen extends StatefulWidget {
@@ -287,7 +374,9 @@ class ReportsScreen extends ConsumerWidget {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 12),
-                        Text('${report.status} · Demo'),
+                        Text(
+                          modeText('${report.status} · Demo', report.status),
+                        ),
                         Text(
                           '${report.dateIsIncident ? 'Incident' : 'Submitted'}: ${DateFormat.yMMMd().format(report.date)}',
                         ),
@@ -330,13 +419,26 @@ class DetailsScreen extends StatelessWidget {
             Text(
               '${report.dateIsIncident ? 'Incident date' : 'Submission date'}: ${DateFormat.yMMMd().format(report.date)}',
             ),
-            Text('Status: ${report.status} — demo'),
-            Text('${report.files.length} evidence selections · not uploaded'),
+            Text(
+              modeText(
+                'Status: ${report.status} — demo',
+                'Status: ${report.status}',
+              ),
+            ),
+            Text(
+              modeText(
+                '${report.files.length} evidence selections · not uploaded',
+                '${report.files.length} evidence files · uploaded and sealed',
+              ),
+            ),
           ],
         ),
       ),
-      const HintCard(
-        'This case is local demo data. Backend acceptance, authorized actions, and evidence sealing are not available.',
+      HintCard(
+        modeText(
+          'This case is local demo data. Backend acceptance, authorized actions, and evidence sealing are not available.',
+          'Your case token stays on this phone. It is the only way to open this case; there is no account to recover it.',
+        ),
       ),
       ActionButton(
         'Investigation inbox',
@@ -362,7 +464,10 @@ class ChallengeScreen extends ConsumerStatefulWidget {
 }
 
 class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
-  String member = 'Committee member A', reason = 'Professional relationship';
+  late String member = widget.report.committee.isEmpty
+      ? ''
+      : widget.report.committee.first.name;
+  String reason = 'Professional relationship';
   final explanation = TextEditingController();
   final form = GlobalKey<FormState>();
   bool busy = false;
@@ -382,15 +487,21 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
       if (mounted) {
         feedback(
           context,
-          'Demo challenge recorded. Independent review remains pending.',
+          modeText(
+            'Demo challenge recorded. Independent review remains pending.',
+            'Challenge recorded on Polygon. An independent reviewer will decide.',
+          ),
         );
         setState(() {});
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         feedback(
           context,
-          'Challenge could not be submitted. Please try again.',
+          friendlyError(
+            e,
+            fallback: 'Challenge could not be submitted. Please try again.',
+          ),
         );
       }
     } finally {
@@ -404,8 +515,11 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
     children: [
       Text(widget.report.id),
       const SizedBox(height: 20),
-      const HintCard(
-        'Fictional committee assignment. A challenge requests an independent review; it does not reassign a member.',
+      HintCard(
+        modeText(
+          'Fictional committee assignment. A challenge requests an independent review; it does not reassign a member.',
+          'A challenge is anonymous and goes to an independent reviewer, not to the member you name. If it is upheld, the member is replaced and loses access to your case.',
+        ),
       ),
       Form(
         key: form,
@@ -419,20 +533,17 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
                     'Who concerns you?',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  for (final name in [
-                    'Committee member A',
-                    'Committee member B',
-                    'Committee member C',
-                  ])
+                  for (final m in widget.report.committee)
                     ListTile(
-                      title: Text(name),
+                      title: Text(m.name),
+                      subtitle: demoEnabled ? null : Text(m.role),
                       leading: Icon(
-                        member == name
+                        member == m.name
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off,
                         color: purple,
                       ),
-                      onTap: () => setState(() => member = name),
+                      onTap: () => setState(() => member = m.name),
                     ),
                 ],
               ),
@@ -467,7 +578,11 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
                   : null,
             ),
             const SizedBox(height: 20),
-            ActionButton('Submit demo challenge', submit, busy: busy),
+            ActionButton(
+              modeText('Submit demo challenge', 'Submit challenge'),
+              submit,
+              busy: busy,
+            ),
           ],
         ),
       ),
@@ -479,9 +594,10 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
               Text(challenge.member),
               Text(challenge.reason),
               Text(challenge.status, style: const TextStyle(color: purple)),
-              const Text(
-                'Independent outcome: pending. No reassignment received.',
-              ),
+              if (demoEnabled)
+                const Text(
+                  'Independent outcome: pending. No reassignment received.',
+                ),
             ],
           ),
         ),
@@ -530,6 +646,7 @@ class InboxScreen extends ConsumerWidget {
         style: Theme.of(context).textTheme.titleLarge,
       ),
       const SizedBox(height: 16),
+      if (!demoEnabled) const _WitnessCodeEntry(),
       ref
           .watch(invitationsProvider)
           .when(
@@ -548,6 +665,46 @@ class InboxScreen extends ConsumerWidget {
               ],
             ),
           ),
+    ],
+  );
+}
+
+/// An investigator hands a witness a one-time code out of band; entering it here lists their invitations.
+class _WitnessCodeEntry extends ConsumerStatefulWidget {
+  const _WitnessCodeEntry();
+  @override
+  ConsumerState<_WitnessCodeEntry> createState() => _WitnessCodeEntryState();
+}
+
+class _WitnessCodeEntryState extends ConsumerState<_WitnessCodeEntry> {
+  final code = TextEditingController();
+  @override
+  void dispose() {
+    code.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (code.text.trim().isEmpty) return;
+    await ref.read(caseVaultProvider).setWitnessCode(code.text.trim());
+    code.clear();
+    ref.invalidate(invitationsProvider);
+    if (mounted) feedback(context, 'Witness code saved on this phone.');
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      TextField(
+        controller: code,
+        autocorrect: false,
+        decoration: const InputDecoration(
+          labelText: 'Witness code',
+          hintText: 'Given to you by the investigator',
+        ),
+      ),
+      const SizedBox(height: 12),
+      ActionButton('Show my invitations', save),
     ],
   );
 }
@@ -574,11 +731,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     try {
       await ref.read(repositoryProvider).send(widget.report, text.text.trim());
       text.clear();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         feedback(
           context,
-          'Message could not be sent. Your draft remains available.',
+          friendlyError(
+            e,
+            fallback:
+                'Message could not be sent. Your draft remains available.',
+          ),
         );
       }
     } finally {
@@ -592,9 +753,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     children: [
       Text(widget.report.id),
       const SizedBox(height: 16),
-      const HintCard(
-        'Demo conversation. Messages stay in memory and are not sent to an investigator. No end-to-end encryption claim.',
+      HintCard(
+        modeText(
+          'Demo conversation. Messages stay in memory and are not sent to an investigator. No end-to-end encryption claim.',
+          'The investigation team sees "Anonymous Reporter", never your identity. Each message is sealed into the Silent Audit.',
+        ),
       ),
+      if (!demoEnabled)
+        ActionButton('Check for replies', () async {
+          final repo = ref.read(repositoryProvider);
+          try {
+            if (repo is LiveRepository) await repo.refresh(widget.report);
+            if (mounted) setState(() {});
+          } catch (e) {
+            if (context.mounted) feedback(context, friendlyError(e));
+          }
+        }),
       for (final note in widget.report.messages)
         Align(
           alignment: note.sender == 'You'
@@ -641,7 +815,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           hintText: 'Share only what is needed',
         ),
       ),
-      ActionButton('Send demo reply', send, busy: busy),
+      ActionButton(modeText('Send demo reply', 'Send reply'), send, busy: busy),
     ],
   );
 }
@@ -660,9 +834,15 @@ class _WitnessScreenState extends ConsumerState<WitnessScreen> {
     try {
       await ref.read(repositoryProvider).respond(widget.invitation, value);
       ref.invalidate(invitationsProvider);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        feedback(context, 'Response could not be recorded. Please retry.');
+        feedback(
+          context,
+          friendlyError(
+            e,
+            fallback: 'Response could not be recorded. Please retry.',
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -690,17 +870,22 @@ class _WitnessScreenState extends ConsumerState<WitnessScreen> {
       ),
       if (widget.invitation.response == null) ...[
         ActionButton(
-          'Accept demo invitation',
-          () => respond('Accepted — demo'),
+          modeText('Accept demo invitation', 'Accept invitation'),
+          () => respond(modeText('Accepted — demo', 'accept')),
           busy: busy,
         ),
         ActionButton(
-          'Decline demo invitation',
-          () => respond('Declined — demo'),
+          modeText('Decline demo invitation', 'Decline invitation'),
+          () => respond(modeText('Declined — demo', 'decline')),
           busy: busy,
         ),
       ] else
-        HintCard('Response recorded locally: ${widget.invitation.response}'),
+        HintCard(
+          modeText(
+            'Response recorded locally: ${widget.invitation.response}',
+            'Response recorded: ${widget.invitation.response}. Thank you.',
+          ),
+        ),
     ],
   );
 }
@@ -714,8 +899,11 @@ class AuditScreen extends ConsumerWidget {
     children: [
       Text(report.id),
       const SizedBox(height: 16),
-      const HintCard(
-        'Demo timeline. Integrity does not establish truth. Anchoring can make changes detectable; it cannot prevent all suppression.',
+      HintCard(
+        modeText(
+          'Demo timeline. Integrity does not establish truth. Anchoring can make changes detectable; it cannot prevent all suppression.',
+          'Every step is sealed and anchored on Polygon, so any later edit is detectable. Integrity does not establish truth.',
+        ),
       ),
       ActionButton(
         'Refresh timeline',
@@ -755,7 +943,10 @@ class AuditScreen extends ConsumerWidget {
                             if (context.mounted) {
                               feedback(
                                 context,
-                                'Demo receipt identifier copied.',
+                                modeText(
+                                  'Demo receipt identifier copied.',
+                                  'Receipt copied.',
+                                ),
                               );
                             }
                           },
@@ -806,18 +997,24 @@ class SettingsScreen extends ConsumerWidget {
         await const FlutterSecureStorage().delete(key: 'biometric_enabled');
         if (context.mounted) feedback(context, 'Biometric preference removed.');
       }),
-      const HintCard(
-        'Notifications and anonymous credential recovery are integration pending. No personal profile or analytics is collected by this demo.',
+      HintCard(
+        modeText(
+          'Notifications and anonymous credential recovery are integration pending. No personal profile or analytics is collected by this demo.',
+          'Clearing forgets your case tokens on this phone; those cases cannot be reopened here. Your membership stays, so you can still report.',
+        ),
       ),
-      ActionButton('Clear local demo session', () async {
-        await const FlutterSecureStorage().delete(key: 'biometric_enabled');
-        ref.invalidate(repositoryProvider);
-        ref.invalidate(reportsProvider);
-        ref.invalidate(invitationsProvider);
-        ref.read(sessionProvider.notifier).clear();
-        if (context.mounted) context.go('/');
-      }),
+      ActionButton(
+        modeText('Clear local demo session', 'Forget my cases on this phone'),
+        () async {
+          await const FlutterSecureStorage().delete(key: 'biometric_enabled');
+          if (!demoEnabled) await ref.read(caseVaultProvider).clear();
+          ref.invalidate(repositoryProvider);
+          ref.invalidate(reportsProvider);
+          ref.invalidate(invitationsProvider);
+          ref.read(sessionProvider.notifier).clear();
+          if (context.mounted) context.go('/');
+        },
+      ),
     ],
   );
 }
-

@@ -27,58 +27,122 @@ void main() {
     repo = LiveRepository(api, zk, vault);
   });
 
-  test('enrol, report with evidence, inbox, challenge, witness, audit', () async {
-    expect(() => zk.submitReport({'category': 'Bullying'}), throwsA(isA<NotEnrolled>()));
-    await expectLater(zk.enroll('wrong-code'), throwsA(isA<ApiFailure>()));
-    await zk.enroll('DEMO-INVITE');
-    await zk.enroll('DEMO-INVITE'); // idempotent
-    expect(await zk.isEnrolled(), isTrue);
+  test(
+    'enrol, report with evidence, inbox, challenge, witness, audit',
+    () async {
+      expect(
+        () => zk.submitReport({'category': 'Bullying'}),
+        throwsA(isA<NotEnrolled>()),
+      );
+      await expectLater(zk.enroll('wrong-code'), throwsA(isA<ApiFailure>()));
+      await zk.enroll('DEMO-INVITE');
+      await zk.enroll('DEMO-INVITE'); // idempotent
+      expect(await zk.isEnrolled(), isTrue);
 
-    final file = File('${Directory.systemTemp.createTempSync().path}/note.txt')..writeAsStringSync('evidence');
-    final report = await repo.submit('Bullying', 'Stand-ups', 'Repeated shouting.', DateTime(2026, 10, 9), [
-      file.path,
-    ]);
-    expect(report.id, startsWith('INC-'));
-    expect(report.status, 'Committee assigned');
-    expect(report.files, ['note.txt']);
-    expect(report.messages, isEmpty);
+      final file = File(
+        '${Directory.systemTemp.createTempSync().path}/note.txt',
+      )..writeAsStringSync('evidence');
+      final report = await repo.submit(
+        'Bullying',
+        'Stand-ups',
+        'Repeated shouting.',
+        DateTime(2026, 10, 9),
+        [file.path],
+      );
+      expect(report.id, startsWith('INC-'));
+      expect(report.status, 'Committee assigned');
+      expect(report.files, ['note.txt']);
+      expect(report.messages, isEmpty);
+      expect(report.committee.map((m) => m.name), ['Marcus Vance', 'David Kim']);
 
-    // One complaint per identity per UTC day: the daily scope's nullifier is already used.
-    await expectLater(
-      repo.submit('Bullying', 'Again', 'Second report.', DateTime(2026, 10, 9), []),
-      throwsA(isA<ApiFailure>().having((e) => e.reason, 'reason', 'replay')),
-    );
+      // One complaint per identity per UTC day: the daily scope's nullifier is already used.
+      await expectLater(
+        repo.submit(
+          'Bullying',
+          'Again',
+          'Second report.',
+          DateTime(2026, 10, 9),
+          [],
+        ),
+        throwsA(isA<ApiFailure>().having((e) => e.reason, 'reason', 'replay')),
+      );
 
-    await repo.send(report, 'It happens every Monday.');
-    await repo.challenge(report, 'Committee member B', 'Prior involvement', 'They reviewed my last complaint.');
-    await expectLater(
-      repo.challenge(report, 'Committee member B', 'Other', 'Trying the same member twice.'),
-      throwsA(isA<ApiFailure>().having((e) => e.reason, 'reason', 'replay')),
-    );
+      await repo.send(report, 'It happens every Monday.');
+      await repo.challenge(
+        report,
+        'David Kim',
+        'Prior involvement',
+        'They reviewed my last complaint.',
+      );
+      await expectLater(
+        repo.challenge(
+          report,
+          'David Kim',
+          'Other',
+          'Trying the same member twice.',
+        ),
+        throwsA(isA<ApiFailure>().having((e) => e.reason, 'reason', 'replay')),
+      );
 
-    final listed = await repo.reports();
-    expect(listed.single.id, report.id);
-    expect(listed.single.challenges.single.member, 'Committee member B');
-    expect(listed.single.messages.single.text, 'It happens every Monday.');
+      final listed = await repo.reports();
+      expect(listed.single.id, report.id);
+      expect(listed.single.challenges.single.member, 'David Kim');
+      expect(
+        listed.single.challenges.single.status,
+        'Submitted · independent review pending',
+      );
+      expect(listed.single.messages.single.text, 'It happens every Monday.');
 
-    final admin = Dio(BaseOptions(baseUrl: stubUrl, headers: {'X-Stub-Admin': 'adm'}));
-    final invite = await admin.post(
-      '/_stub/witness-invitations',
-      data: {'case_id': report.id, 'context': 'Team meeting on 9 Oct'},
-    );
-    expect(await repo.invitations(), isEmpty);
-    await vault.setWitnessCode(invite.data['witness_code'] as String);
-    final invitations = await repo.invitations();
-    await repo.respond(invitations.single, 'Accepted — demo');
-    expect(invitations.single.response, 'accept');
+      final hr = Dio(
+        BaseOptions(
+          baseUrl: stubUrl,
+          headers: {'X-Stub-Admin': 'adm', 'X-Staff-Id': 'usr_elena'},
+        ),
+      );
+      await hr.post(
+        '/hr/cases/${report.id}/messages',
+        data: {'text': 'Which day did it start?'},
+      );
+      await repo.refresh(report);
+      expect(report.messages.map((m) => m.sender), [
+        'You',
+        'Investigation team',
+      ]);
+      expect(report.messages.last.text, 'Which day did it start?');
 
-    var audit = await repo.audit(report);
-    for (var i = 0; i < 20 && audit.any((e) => e.state != 'Verified on Polygon'); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      audit = await repo.audit(report);
-    }
-    expect(audit.map((e) => e.state).toSet(), {'Verified on Polygon'});
-    expect(audit.first.title, 'Report recorded');
-    expect(audit.map((e) => e.title), containsAll(['Evidence sealed', 'Challenge submitted', 'Message exchanged']));
-  }, skip: stubUrl.isEmpty ? 'set --dart-define=INCOGNITO_STUB_URL' : false);
+      final admin = Dio(
+        BaseOptions(baseUrl: stubUrl, headers: {'X-Stub-Admin': 'adm'}),
+      );
+      final invite = await admin.post(
+        '/_stub/witness-invitations',
+        data: {'case_id': report.id, 'context': 'Team meeting on 9 Oct'},
+      );
+      expect(await repo.invitations(), isEmpty);
+      await vault.setWitnessCode(invite.data['witness_code'] as String);
+      final invitations = await repo.invitations();
+      await repo.respond(invitations.single, 'Accepted — demo');
+      expect(invitations.single.response, 'accept');
+
+      var audit = await repo.audit(report);
+      for (
+        var i = 0;
+        i < 20 && audit.any((e) => e.state != 'Verified on Polygon');
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        audit = await repo.audit(report);
+      }
+      expect(audit.map((e) => e.state).toSet(), {'Verified on Polygon'});
+      expect(audit.first.title, 'Report recorded');
+      expect(
+        audit.map((e) => e.title),
+        containsAll([
+          'Evidence sealed',
+          'Challenge submitted',
+          'Message exchanged',
+        ]),
+      );
+    },
+    skip: stubUrl.isEmpty ? 'set --dart-define=INCOGNITO_STUB_URL' : false,
+  );
 }

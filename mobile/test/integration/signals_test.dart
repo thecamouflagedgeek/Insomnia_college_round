@@ -22,7 +22,8 @@ void main() {
   });
 
   test('commitment <-> 32-byte little-endian element round trip', () {
-    const c = '4794474613829683445382895362262407640958131911260737082524399359773393694730';
+    const c =
+        '4794474613829683445382895362262407640958131911260737082524399359773393694730';
     final e = commitmentToElement(c);
     expect(
       e.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),

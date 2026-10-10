@@ -27,7 +27,8 @@ class IncognitoApi {
           );
   final Dio _dio;
 
-  static Options _bearer(String token) => Options(headers: {'Authorization': 'Bearer $token'});
+  static Options _bearer(String token) =>
+      Options(headers: {'Authorization': 'Bearer $token'});
 
   Future<T> _call<T>(Future<Response<dynamic>> Function() send) async {
     try {
@@ -44,7 +45,8 @@ class IncognitoApi {
 
   Future<Json> health() => _call(() => _dio.get('/health'));
   Future<Json> categories() => _call(() => _dio.get('/categories'));
-  Future<Json> classify(String text) => _call(() => _dio.post('/classify', data: {'text': text}));
+  Future<Json> classify(String text) =>
+      _call(() => _dio.post('/classify', data: {'text': text}));
 
   Future<Json> enroll(String commitment, String enrollCode) => _call(
     () => _dio.post(
@@ -54,31 +56,56 @@ class IncognitoApi {
     ),
   );
   Future<Json> group() => _call(() => _dio.get('/zk/group'));
-  Future<Json> complaintScope() => _call(() => _dio.get('/zk/scopes/complaint'));
+  Future<Json> complaintScope() =>
+      _call(() => _dio.get('/zk/scopes/complaint'));
   Future<Json> challengeScope(String caseId, String memberId) => _call(
-    () => _dio.get('/zk/scopes/challenge', queryParameters: {'case_id': caseId, 'member_id': memberId}),
+    () => _dio.get(
+      '/zk/scopes/challenge',
+      queryParameters: {'case_id': caseId, 'member_id': memberId},
+    ),
   );
 
-  Future<Json> submitReport(String payload, Json proof) =>
-      _call(() => _dio.post('/reports', data: {'payload': payload, 'proof': proof}));
-  Future<Json> report(String caseId, String token) =>
-      _call(() => _dio.get('/reports/${Uri.encodeComponent(caseId)}', options: _bearer(token)));
-  Future<Json> uploadEvidence(String caseId, String token, String path, String name) async => _call(
-    () async => _dio.post(
-      '/reports/${Uri.encodeComponent(caseId)}/evidence',
-      data: FormData.fromMap({'file': await MultipartFile.fromFile(path, filename: name)}),
+  Future<Json> submitReport(String payload, Json proof) => _call(
+    () => _dio.post('/reports', data: {'payload': payload, 'proof': proof}),
+  );
+  Future<Json> report(String caseId, String token) => _call(
+    () => _dio.get(
+      '/reports/${Uri.encodeComponent(caseId)}',
       options: _bearer(token),
     ),
   );
-  Future<Json> challenge(String caseId, String token, String payload, Json proof) => _call(
+  Future<Json> uploadEvidence(
+    String caseId,
+    String token,
+    String path,
+    String name,
+  ) async => _call(
+    () async => _dio.post(
+      '/reports/${Uri.encodeComponent(caseId)}/evidence',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(path, filename: name),
+      }),
+      options: _bearer(token),
+    ),
+  );
+  Future<Json> challenge(
+    String caseId,
+    String token,
+    String payload,
+    Json proof,
+  ) => _call(
     () => _dio.post(
       '/reports/${Uri.encodeComponent(caseId)}/challenge',
       data: {'payload': payload, 'proof': proof},
       options: _bearer(token),
     ),
   );
-  Future<List<dynamic>> messages(String caseId, String token) =>
-      _call(() => _dio.get('/reports/${Uri.encodeComponent(caseId)}/messages', options: _bearer(token)));
+  Future<List<dynamic>> messages(String caseId, String token) => _call(
+    () => _dio.get(
+      '/reports/${Uri.encodeComponent(caseId)}/messages',
+      options: _bearer(token),
+    ),
+  );
   Future<Json> sendMessage(String caseId, String token, String text) => _call(
     () => _dio.post(
       '/reports/${Uri.encodeComponent(caseId)}/messages',
@@ -88,9 +115,16 @@ class IncognitoApi {
   );
 
   Future<List<dynamic>> invitations(String witnessCode) => _call(
-    () => _dio.get('/witness-invitations', options: Options(headers: {'X-Witness-Code': witnessCode})),
+    () => _dio.get(
+      '/witness-invitations',
+      options: Options(headers: {'X-Witness-Code': witnessCode}),
+    ),
   );
-  Future<Json> respond(String witnessCode, String invitationId, String response) => _call(
+  Future<Json> respond(
+    String witnessCode,
+    String invitationId,
+    String response,
+  ) => _call(
     () => _dio.post(
       '/witness-invitations/${Uri.encodeComponent(invitationId)}/respond',
       data: {'response': response},
@@ -98,8 +132,16 @@ class IncognitoApi {
     ),
   );
 
-  Future<Json> verify(String caseId, String token) =>
-      _call(() => _dio.get('/audit/cases/${Uri.encodeComponent(caseId)}/verify', options: _bearer(token)));
-  Future<List<dynamic>> receipts(String caseId, String token) =>
-      _call(() => _dio.get('/audit/cases/${Uri.encodeComponent(caseId)}/receipts', options: _bearer(token)));
+  Future<Json> verify(String caseId, String token) => _call(
+    () => _dio.get(
+      '/audit/cases/${Uri.encodeComponent(caseId)}/verify',
+      options: _bearer(token),
+    ),
+  );
+  Future<List<dynamic>> receipts(String caseId, String token) => _call(
+    () => _dio.get(
+      '/audit/cases/${Uri.encodeComponent(caseId)}/receipts',
+      options: _bearer(token),
+    ),
+  );
 }
