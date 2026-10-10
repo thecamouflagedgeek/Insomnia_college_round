@@ -4,6 +4,13 @@ import { WitnessInvitation, WitnessQuorumSummary } from '../types/witness';
 import { AuditEvent } from '../types/audit';
 import { User, DEMO_USERS } from '../types/auth';
 import {
+  CaseResolution,
+  PatternReport,
+  ReflectReformInsights,
+  RelatedCases,
+  ResolutionOutcome
+} from '../types/intelligence';
+import {
   INITIAL_COMPLAINTS,
   INITIAL_CHALLENGES,
   INITIAL_WITNESS_INVITATIONS,
@@ -583,6 +590,73 @@ export class ApiService {
       source: 'stateful_mock',
       timestamp: new Date().toISOString()
     };
+  }
+
+  // --- M3 ENGINES & CASE OUTCOMES (live backend only) ---
+  private static unavailable<T>(): ApiResponse<T> {
+    return {
+      success: false,
+      status: 503,
+      error: 'Available with the live backend only',
+      source: 'stateful_mock',
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  public static async getPatterns(): Promise<ApiResponse<PatternReport>> {
+    return (await this.live<PatternReport>('/patterns')) ?? this.unavailable();
+  }
+
+  public static async getRelatedCases(complaintId: string): Promise<ApiResponse<RelatedCases>> {
+    return (await this.live<RelatedCases>(`/cases/${encodeURIComponent(complaintId)}/related`)) ?? this.unavailable();
+  }
+
+  public static async resolveCase(
+    complaintId: string,
+    outcome: ResolutionOutcome,
+    summary: string,
+    actions: string[]
+  ): Promise<ApiResponse<Complaint & { resolution: CaseResolution }>> {
+    return (
+      (await this.live<Complaint & { resolution: CaseResolution }>(
+        `/cases/${encodeURIComponent(complaintId)}/resolve`,
+        this.post({ outcome, summary, actions })
+      )) ?? this.unavailable()
+    );
+  }
+
+  public static async getInsights(): Promise<ApiResponse<ReflectReformInsights>> {
+    return (await this.live<ReflectReformInsights>('/insights')) ?? this.unavailable();
+  }
+
+  /** Legal Evidence Package: downloads the PDF (the backend records the export in the Silent Audit). */
+  public static async downloadEvidencePackage(complaintId: string): Promise<ApiResponse<{ exportId: string }>> {
+    if (this.forceMock) return this.unavailable();
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/hr/cases/${encodeURIComponent(complaintId)}/export.pdf`, {
+        headers: { 'X-Stub-Admin': this.stubAdminKey, 'X-Staff-Id': this.user.id }
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const error = body?.detail?.message || body?.detail?.reason || `HTTP ${res.status}`;
+        return { success: false, status: res.status, error, source: 'real_backend', timestamp: new Date().toISOString() };
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${complaintId}-evidence-package.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return {
+        success: true,
+        status: 200,
+        data: { exportId: res.headers.get('X-Export-Id') || '' },
+        source: 'real_backend',
+        timestamp: new Date().toISOString()
+      };
+    } catch {
+      return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: new Date().toISOString() };
+    }
   }
 
   // Reset state helper for testing & judges

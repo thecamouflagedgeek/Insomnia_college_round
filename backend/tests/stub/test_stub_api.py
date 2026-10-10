@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.chain.signals import bytes32_text, challenge_scope_text, complaint_scope_text, message_text
 from app.stub.main import create_app
 
+KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # test-only 32-byte key
 ENV = {"CHAIN_MODE": "offline", "STUB_ENROLL_CODES": "CODE-1", "STUB_ADMIN_KEY": "adm", "ANCHOR_INTERVAL_S": "0.05"}
 ADMIN = {"X-Stub-Admin": "adm"}
 _nullifier = iter(range(1, 10_000))
@@ -33,7 +34,8 @@ def client():
 
 
 def submit(client, payload=None, nullifier=None):
-    payload = payload or report_payload()
+    # Distinct text per report: Claim Integrity rejects duplicate content.
+    payload = payload or report_payload(description=f"Repeated shouting in stand-ups, report {next(_nullifier)}.")
     scope = complaint_scope_text(datetime.now(timezone.utc).date())
     return client.post("/reports", json={"payload": payload, "proof": proof(payload, scope, nullifier)})
 
@@ -89,7 +91,8 @@ def test_full_reporter_journey(client):
 
     v = wait_verified(client, case_id, token)
     types = [e["event_type"] for e in v["events"]]
-    assert types[:4] == ["complaint_submitted", "case_classified", "committee_assigned", "status_changed"]
+    assert types[:5] == ["complaint_submitted", "case_classified", "severity_assessed", "committee_assigned",
+                         "status_changed"]
     assert {"evidence_sealed", "inbox_message", "challenge_filed", "challenge_decided", "member_replaced"} <= set(types)
     receipts = client.get(f"/audit/cases/{case_id}/receipts", headers=auth(token)).json()
     assert len(receipts) == len(types) and all(x["anchor_tx"] for x in receipts)
@@ -122,7 +125,8 @@ def test_proof_binding_errors(client):
     r = client.post("/reports", json={"payload": payload, "proof": proof(payload, "cmp:1999-01-01")})
     assert r.json()["detail"]["reason"] == "scope_mismatch"
     assert submit(client, nullifier=777).status_code == 201
-    r = submit(client, report_payload(client_nonce="n-other-0001"), nullifier=777)
+    r = submit(client, report_payload(description="A different second report.", client_nonce="n-other-0001"),
+               nullifier=777)
     assert r.status_code == 400 and r.json()["detail"]["reason"] == "replay"
 
 
@@ -162,7 +166,7 @@ def test_classify_is_stateless_stub(client):
 
 
 def test_state_survives_restart(tmp_path):
-    env = {**ENV, "STUB_STATE_PATH": str(tmp_path / "state.json")}
+    env = {**ENV, "STUB_STATE_PATH": str(tmp_path / "state.json"), "ENCRYPTION_KEY": KEY}
     with TestClient(create_app(dict(env))) as c:
         r = submit(c).json()
     with TestClient(create_app(dict(env))) as c:

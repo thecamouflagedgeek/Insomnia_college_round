@@ -16,6 +16,13 @@ const _statusLabels = {
   'closed': 'Closed',
 };
 
+const _outcomeLabels = {
+  'substantiated': 'Substantiated',
+  'partially_substantiated': 'Partially substantiated',
+  'not_substantiated': 'Not substantiated',
+  'resolved_informally': 'Resolved informally',
+};
+
 const _challengeLabels = {
   'pending_review': 'Submitted · independent review pending',
   'upheld': 'Upheld · member replaced',
@@ -39,6 +46,7 @@ const _eventTitles = {
   'status_changed': 'Status changed',
   'resolution_recorded': 'Resolution recorded',
   'export_generated': 'Evidence package exported',
+  'reflection_recorded': 'Feedback received',
 };
 
 const _verifyStates = {
@@ -91,6 +99,16 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       ],
     );
     report.status = _statusLabels[view['status']] ?? view['status'] as String;
+    final resolution = view['resolution'] as Json?;
+    if (resolution != null) {
+      report.resolutionOutcome =
+          _outcomeLabels[resolution['outcome']] ??
+          resolution['outcome'] as String;
+      report.resolutionActions = List<String>.from(
+        resolution['actions'] as List,
+      );
+    }
+    report.reflectionSubmitted = view['reflection_submitted'] as bool? ?? false;
     for (final c in (view['challenges'] as List).cast<Json>()) {
       report.challenges.add(
         Challenge(
@@ -179,10 +197,43 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     ],
   );
 
+  /// Reflect & Reform: anonymous, structured feedback once the case is resolved (no free text).
+  Future<void> reflect(
+    Report report, {
+    required int fairness,
+    required bool feltSafe,
+    required bool wouldReportAgain,
+  }) async {
+    await _api.reflect(
+      report.id,
+      await _token(report.id),
+      fairness,
+      feltSafe,
+      wouldReportAgain,
+    );
+    report.reflectionSubmitted = true;
+  }
+
+  /// Category suggestions from the server's classifier (stateless; nothing stored).
+  Future<List<ClassificationSuggestion>> suggest(String narrative) async {
+    final out = await _api.classify(narrative);
+    return [
+      for (final s in (out['suggestions'] as List).cast<Json>())
+        ClassificationSuggestion(
+          s['category'] as String,
+          'Suggested from the words you used (match strength ${((s['score'] as num) * 100).round()}%). '
+          'A routing aid for you to accept or ignore, not a finding.',
+        ),
+    ];
+  }
+
   /// Re-reads a case into [report] in place (new investigator messages, challenge outcomes, committee changes).
   Future<void> refresh(Report report) async {
     final fresh = await _load(report.id, await _token(report.id));
     report.status = fresh.status;
+    report.resolutionOutcome = fresh.resolutionOutcome;
+    report.resolutionActions = fresh.resolutionActions;
+    report.reflectionSubmitted = fresh.reflectionSubmitted;
     report.messages
       ..clear()
       ..addAll(fresh.messages);

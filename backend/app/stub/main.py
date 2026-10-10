@@ -2,6 +2,7 @@
 
 CHAIN_MODE=offline (default): no chain, no DB, proofs not checked cryptographically. For UI work.
 CHAIN_MODE=live: real Semaphore group + CaseAuditRegistry on Amoy (needs the repo .env and DATABASE_URL)."""
+import base64
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -53,7 +54,8 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     if mode not in ("offline", "live"):
         raise RuntimeError("CHAIN_MODE must be offline or live")
     settings = ChainSettings.from_env({**_OFFLINE_DEFAULTS, **env} if mode == "offline" else env)
-    store = StubStore(env.get("STUB_STATE_PATH") or None)
+    key = env.get("ENCRYPTION_KEY")
+    store = StubStore(env.get("STUB_STATE_PATH") or None, base64.urlsafe_b64decode(key) if key else None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -67,7 +69,8 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     app.state.chain_mode = mode
     app.state.enroll_codes = [c.strip() for c in env.get("STUB_ENROLL_CODES", "DEMO-INVITE").split(",") if c.strip()]
     app.state.admin_key = env.get("STUB_ADMIN_KEY", "")
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+                       expose_headers=["X-Export-Id", "X-Content-SHA256", "Content-Disposition"])
     app.include_router(build_router(enroll_guard=enroll_guard, case_guard=case_guard))
     app.include_router(build_api_router())
     if app.state.admin_key:

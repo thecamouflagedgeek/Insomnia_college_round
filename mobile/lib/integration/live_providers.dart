@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/story/story_state.dart';
 import 'api_client.dart';
 import 'live_repository.dart';
 import 'reporter_zk.dart';
@@ -37,6 +38,16 @@ final reporterZkProvider = Provider(
 /// final repositoryProvider = Provider<EmployeeRepository>(
 ///   (ref) => demoEnabled ? DemoRepository() : ref.watch(liveRepositoryProvider));
 /// ```
+/// Live category suggestions for a narrative; cached per text so selections keep their identity.
+final liveSuggestionsProvider = FutureProvider.family((
+  ref,
+  String narrative,
+) async {
+  final repo = ref.watch(liveRepositoryProvider);
+  final suggestions = await repo.suggest(narrative);
+  return suggestions.isEmpty ? demoSuggestions : suggestions;
+});
+
 final liveRepositoryProvider = Provider(
   (ref) => LiveRepository(
     ref.watch(incognitoApiProvider),

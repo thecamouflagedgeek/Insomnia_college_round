@@ -24,6 +24,10 @@ class Report {
   final bool dateIsIncident;
   final List<CommitteeMember> committee;
   String status = 'Committee assigned';
+  // Reflect & Reform (live mode): outcome and reform actions once HR resolves the case.
+  String? resolutionOutcome;
+  List<String> resolutionActions = const [];
+  bool reflectionSubmitted = false;
   final List<Challenge> challenges = [];
   final List<Note> messages = [
     Note(

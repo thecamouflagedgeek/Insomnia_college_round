@@ -6,6 +6,7 @@ import { SeverityBadge } from '../components/ui/SeverityBadge';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { EvidenceIntegrityPanel } from '../components/complaints/EvidenceIntegrityPanel';
 import { WitnessQuorumPanel } from '../components/investigation/WitnessQuorumPanel';
+import { CaseActionsPanel } from '../components/case/CaseActionsPanel';
 import { AccessDeniedBanner } from '../components/ui/AccessDeniedBanner';
 import { NavPage } from '../components/layout/Sidebar';
 import {
@@ -23,7 +24,7 @@ import {
 interface ReportDetailsProps {
   complaintId: string;
   onBack: () => void;
-  onNavigate: (page: NavPage) => void;
+  onNavigate: (page: NavPage, caseId?: string) => void;
 }
 
 export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetailsProps) {
@@ -203,6 +204,13 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
           </button>
         </div>
       </div>
+
+      {/* Outcome, legal export, related cases */}
+      <CaseActionsPanel
+        complaint={complaint}
+        onChanged={fetchCase}
+        onOpenCase={(id) => onNavigate('report_details', id)}
+      />
 
       {/* Evidence Integrity Panel */}
       <EvidenceIntegrityPanel evidence={complaint.evidence} complaintId={complaint.id} />

@@ -76,6 +76,24 @@ Tests: `flutter test` (demo, 14 pass); `flutter test test/integration/live_ui_te
 (live screens, fake API); `flutter test test/integration --dart-define=INCOGNITO_STUB_URL=http://127.0.0.1:8010`
 (full journey against a running offline stub, including an HR reply reaching the phone).
 
+## M3 engines and features (integrated backend)
+
+M3's `/api/v1` app (`backend/app/main.py`) is kept as-is for its Supabase path; its contract is now
+`shared/m3-api-v1.yaml`. Its engines run inside the working workflow:
+
+| Feature | Where |
+|---|---|
+| Classification (M3 classifier) | `POST /classify`; app "Tell Your Story" suggestions in live mode |
+| Severity (M3 engine + category floor) | On submit, audited; dashboard severity badge and signals |
+| Claim Integrity (M3 checks + duplicates) | On submit, before the proof (422 `claim_integrity`, nullifier not spent) |
+| Incident Correlation, Repeat Allegations | `GET /hr/cases/{id}/related`, `GET /hr/patterns`; dashboard Pattern Intelligence and case page |
+| Legal Evidence Package (M3 PDF) | `GET /hr/cases/{id}/export.pdf`; dashboard button; each export audited |
+| Reflect & Reform | `POST /hr/cases/{id}/resolve`, `POST /reports/{id}/reflection`, `GET /hr/insights` (hidden below 3 responses); app outcome card |
+| Encryption at rest (M3 AES-256-GCM) | Stub state file (`STUB_STATE_PATH` requires `ENCRYPTION_KEY`) |
+
+Not done: Supabase persistence and Supabase JWT auth (no project credentials in the repo); Repeat Allegations need
+the app to offer a directory picker that sets `subject_ref` (the API accepts it today).
+
 ## HR dashboard (M2)
 
 `web/` calls the stub's `/hr/*` API by default (set `VITE_STUB_ADMIN_KEY` to the stub's `STUB_ADMIN_KEY`, default

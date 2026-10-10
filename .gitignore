@@ -3,7 +3,9 @@
 !.env.example
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+*.egg-info/
 node_modules/
 dist/
 build/
@@ -17,3 +19,5 @@ blockchain/out/
 blockchain/broadcast/*/31337/
 blockchain/broadcast/**/run-[0-9]*.json
 blockchain/broadcast/**/*.lock
+backend/models-cache/
+.freebuff

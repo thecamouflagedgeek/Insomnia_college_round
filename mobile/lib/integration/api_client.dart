@@ -100,6 +100,23 @@ class IncognitoApi {
       options: _bearer(token),
     ),
   );
+  Future<Json> reflect(
+    String caseId,
+    String token,
+    int fairness,
+    bool feltSafe,
+    bool wouldReportAgain,
+  ) => _call(
+    () => _dio.post(
+      '/reports/${Uri.encodeComponent(caseId)}/reflection',
+      data: {
+        'fairness': fairness,
+        'felt_safe': feltSafe,
+        'would_report_again': wouldReportAgain,
+      },
+      options: _bearer(token),
+    ),
+  );
   Future<List<dynamic>> messages(String caseId, String token) => _call(
     () => _dio.get(
       '/reports/${Uri.encodeComponent(caseId)}/messages',

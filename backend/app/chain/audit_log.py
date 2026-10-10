@@ -23,6 +23,7 @@ EVENT_TYPES = frozenset({
     "status_changed",             # {from, to}
     "resolution_recorded",        # {resolution_id, content_sha256}
     "export_generated",           # {export_id, content_sha256}
+    "reflection_recorded",        # {reflection_id}  (Reflect & Reform; ratings stay off-chain)
 })
 
 
