@@ -1,146 +1,139 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Lock, MessageSquare, RefreshCw, Send } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
-import { MessageSquare, Send, ShieldCheck, Lock, AlertCircle } from 'lucide-react';
+import { Notice } from '../ui/Notice';
+import { EmptyState } from '../ui/EmptyState';
+import { SkeletonRows } from '../ui/Skeleton';
+import { formatDateTime } from '../../lib/format';
 
 interface InvestigationInboxProps {
   complaintId: string;
 }
 
+type Message = { id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean };
+
 export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   const { currentUser } = useAuth();
-  const [messages, setMessages] = useState<Array<{ id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean }>>([]);
+  const [messages, setMessages] = useState<Message[] | null>(null);
   const [inputText, setInputText] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const streamRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = async () => {
     setAccessError(null);
     const res = await ApiService.getMessages(complaintId);
-    if (res.success && res.data) {
-      setMessages(res.data);
-    } else {
-      setAccessError(res.error || 'Access Denied: You do not have permissions to read secure messages for this case.');
+    if (res.success && res.data) setMessages(res.data);
+    else {
+      setMessages([]);
+      setAccessError(res.error || 'You do not have access to messages for this case.');
     }
   };
 
   useEffect(() => {
+    setMessages(null);
+    setSendError(null);
     loadMessages();
   }, [complaintId, currentUser.id]);
 
+  useEffect(() => {
+    const el = streamRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-
-    setLoading(true);
-    const res = await ApiService.sendMessage(complaintId, inputText);
-    setInputText('');
-    setLoading(false);
-
+    const text = inputText.trim();
+    if (!text) return;
+    setSending(true);
+    setSendError(null);
+    const res = await ApiService.sendMessage(complaintId, text);
+    setSending(false);
     if (res.success) {
+      setInputText('');
       loadMessages();
     } else {
-      alert(res.error || 'Failed to send message');
+      // Keep the draft so nothing is lost.
+      setSendError(res.error || 'The message was not sent.');
     }
   };
 
   if (accessError) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-3xl p-8 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 mx-auto mb-3">
-          <Lock className="w-6 h-6" />
-        </div>
-        <h3 className="text-base font-bold text-red-950">Encrypted Channel Access Restricted</h3>
-        <p className="text-xs text-red-800 max-w-md mx-auto mt-1 leading-relaxed">
-          {accessError}
-        </p>
+      <div className="card card-pad">
+        <EmptyState icon={<Lock />} title="This channel isn't open to you" description={accessError} />
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm flex flex-col h-[580px]">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-stone-100 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-purple-50 flex items-center justify-center text-[#5B3FA3]">
-            <MessageSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-[#191725]">Anonymous Investigation Channel</h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                End-to-End PGP Encrypted
-              </span>
-            </div>
-            <p className="text-xs text-[#777487]">
-              Case {complaintId} • Blinded Identity Relay (Zero Knowledge Verified)
-            </p>
-          </div>
+    <section className="card flex h-[min(640px,calc(100vh-13rem))] min-h-[420px] flex-col" aria-label={`Messages for ${complaintId}`}>
+      <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-ink">
+            Anonymous reporter · <span className="case-id text-brand-700">{complaintId}</span>
+          </h2>
+          <p className="text-xs text-muted">The reporter replies from the INCOGNITO app. Their identity is never shown here.</p>
         </div>
-
-        <div className="text-right">
-          <span className="text-xs font-mono text-purple-700 font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
-            ZK-Nullifier Active
-          </span>
-        </div>
-      </div>
-
-      {/* Message Stream */}
-      <div className="flex-1 overflow-y-auto space-y-3 pr-2 mb-4">
-        {messages.map((m) => {
-          const isMe = m.sender.includes(currentUser.name);
-
-          return (
-            <div
-              key={m.id}
-              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-            >
-              <div className="flex items-center gap-1.5 mb-1 text-[10px] text-[#777487]">
-                <ShieldCheck className="w-3 h-3 text-[#5B3FA3]" />
-                <span className="font-bold">{m.sender}</span>
-                <span>• {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-              <div
-                className={`max-w-md p-3.5 rounded-2xl text-xs leading-relaxed ${
-                  isMe
-                    ? 'bg-[#5B3FA3] text-white rounded-tr-sm shadow-sm'
-                    : 'bg-[#FAF7F5] text-[#191725] border border-stone-200/80 rounded-tl-sm'
-                }`}
-              >
-                {m.text}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Input */}
-      <form onSubmit={handleSend} className="pt-3 border-t border-stone-100 flex items-center gap-2">
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Secure reply as ${currentUser.name}...`}
-          className="flex-1 bg-[#FAF7F5] border border-stone-200 rounded-2xl px-4 py-3 text-xs text-[#191725] focus:outline-none focus:border-[#5B3FA3]"
-        />
-        <button
-          type="submit"
-          disabled={loading || !inputText.trim()}
-          className="px-5 py-3 bg-[#5B3FA3] hover:bg-[#493184] text-white text-xs font-bold rounded-2xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
-        >
-          <Send className="w-3.5 h-3.5 text-[#FFD08A]" />
-          <span>Send</span>
+        <button className="icon-btn h-9 w-9 shrink-0" onClick={loadMessages} aria-label="Refresh messages" title="Refresh">
+          <RefreshCw className="h-4 w-4" />
         </button>
-      </form>
+      </header>
 
-      <div className="mt-2 text-[10px] text-[#777487] flex items-center justify-between">
-        <span className="flex items-center gap-1">
-          <AlertCircle className="w-3 h-3 text-stone-400" />
-          Sender identity masked with temporary ephemeral relay token
-        </span>
-        <span className="font-mono text-stone-400">ECDSA-secp256k1 verified</span>
+      <div ref={streamRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4" aria-live="polite">
+        {messages === null ? (
+          <SkeletonRows rows={3} label="Loading messages" />
+        ) : messages.length === 0 ? (
+          <EmptyState compact icon={<MessageSquare />} title="No messages yet" description="Start the conversation. The reporter sees your message in the app." />
+        ) : (
+          messages.map((m) => {
+            const mine = m.sender.includes(currentUser.name);
+            return (
+              <div key={m.id} className={`flex animate-enter flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                <p className="mb-1 text-[0.6875rem] text-muted">
+                  <span className="font-semibold text-ink-soft">{m.sender}</span> · {formatDateTime(m.timestamp)}
+                </p>
+                <p
+                  className={`max-w-[min(34rem,85%)] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[0.8125rem] leading-relaxed ${
+                    mine ? 'rounded-br-md bg-brand-600 text-white' : 'rounded-bl-md bg-sunken text-ink'
+                  }`}
+                >
+                  {m.text}
+                </p>
+              </div>
+            );
+          })
+        )}
       </div>
-    </div>
+
+      <form onSubmit={handleSend} className="border-t border-line px-5 py-4">
+        {sendError && <Notice tone="danger" role="alert" className="mb-3">{sendError}</Notice>}
+        <div className="flex items-end gap-2">
+          <label className="flex-1">
+            <span className="sr-only">Message</span>
+            <textarea
+              rows={1}
+              className="field max-h-32 min-h-[2.75rem] resize-none py-2.5"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder={`Reply as ${currentUser.name}`}
+            />
+          </label>
+          <button type="submit" className="btn btn-primary h-[2.75rem]" disabled={sending || !inputText.trim()}>
+            {sending ? <RefreshCw className="animate-spin" /> : <Send />}
+            <span className="hidden sm:inline">{sending ? 'Sending…' : 'Send'}</span>
+          </button>
+        </div>
+        <p className="mt-1.5 text-[0.6875rem] text-muted">Enter to send · Shift+Enter for a new line · Every message is recorded in the Silent Audit.</p>
+      </form>
+    </section>
   );
 }

@@ -1,0 +1,726 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T01:15:19.269135+00:00",
+  "title": "Design System: INCOGNITO",
+  "extensions": {
+    "colorMeta": {
+      "brand-50": {
+        "role": "primary",
+        "displayName": "Violet Mist",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-100": {
+        "role": "primary",
+        "displayName": "Violet Wash",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-200": {
+        "role": "primary",
+        "displayName": "Violet Haze",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-300": {
+        "role": "primary",
+        "displayName": "Done-Stage Violet",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-500": {
+        "role": "primary",
+        "displayName": "Focus Violet",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-600": {
+        "role": "primary",
+        "displayName": "Deep Case Violet",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-700": {
+        "role": "primary",
+        "displayName": "Pressed Violet",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "brand-800": {
+        "role": "primary",
+        "displayName": "Violet Ink",
+        "tonalRamp": [
+          "#321f78",
+          "#40289a",
+          "#4f33b8",
+          "#6747d9",
+          "#ad9bef",
+          "#cfc4f6",
+          "#e6e0fb",
+          "#f3f0fd"
+        ]
+      },
+      "teal-50": {
+        "role": "secondary",
+        "displayName": "Verified Mist",
+        "tonalRamp": [
+          "#06433c",
+          "#0b7569",
+          "#0e9384",
+          "#13a594",
+          "#5cc4b6",
+          "#a3e0d6",
+          "#c6ece5",
+          "#e6f6f3"
+        ]
+      },
+      "teal-100": {
+        "role": "secondary",
+        "displayName": "Verified Wash",
+        "tonalRamp": [
+          "#06433c",
+          "#0b7569",
+          "#0e9384",
+          "#13a594",
+          "#5cc4b6",
+          "#a3e0d6",
+          "#c6ece5",
+          "#e6f6f3"
+        ]
+      },
+      "teal-500": {
+        "role": "secondary",
+        "displayName": "Verified Dot",
+        "tonalRamp": [
+          "#06433c",
+          "#0b7569",
+          "#0e9384",
+          "#13a594",
+          "#5cc4b6",
+          "#a3e0d6",
+          "#c6ece5",
+          "#e6f6f3"
+        ]
+      },
+      "teal-600": {
+        "role": "secondary",
+        "displayName": "Verified Teal",
+        "tonalRamp": [
+          "#06433c",
+          "#0b7569",
+          "#0e9384",
+          "#13a594",
+          "#5cc4b6",
+          "#a3e0d6",
+          "#c6ece5",
+          "#e6f6f3"
+        ]
+      },
+      "teal-700": {
+        "role": "secondary",
+        "displayName": "Verified Ink",
+        "tonalRamp": [
+          "#06433c",
+          "#0b7569",
+          "#0e9384",
+          "#13a594",
+          "#5cc4b6",
+          "#a3e0d6",
+          "#c6ece5",
+          "#e6f6f3"
+        ]
+      },
+      "attn-50": {
+        "role": "tertiary",
+        "displayName": "Attention Mist",
+        "tonalRamp": [
+          "#5c2409",
+          "#9c3d14",
+          "#c44f1d",
+          "#e2622b",
+          "#ef9a74",
+          "#f7c4ab",
+          "#fbdccd",
+          "#fdf0ea"
+        ]
+      },
+      "attn-100": {
+        "role": "tertiary",
+        "displayName": "Attention Wash",
+        "tonalRamp": [
+          "#5c2409",
+          "#9c3d14",
+          "#c44f1d",
+          "#e2622b",
+          "#ef9a74",
+          "#f7c4ab",
+          "#fbdccd",
+          "#fdf0ea"
+        ]
+      },
+      "attn-500": {
+        "role": "tertiary",
+        "displayName": "Attention Orange",
+        "tonalRamp": [
+          "#5c2409",
+          "#9c3d14",
+          "#c44f1d",
+          "#e2622b",
+          "#ef9a74",
+          "#f7c4ab",
+          "#fbdccd",
+          "#fdf0ea"
+        ]
+      },
+      "attn-600": {
+        "role": "tertiary",
+        "displayName": "Attention Deep",
+        "tonalRamp": [
+          "#5c2409",
+          "#9c3d14",
+          "#c44f1d",
+          "#e2622b",
+          "#ef9a74",
+          "#f7c4ab",
+          "#fbdccd",
+          "#fdf0ea"
+        ]
+      },
+      "attn-700": {
+        "role": "tertiary",
+        "displayName": "Attention Ink",
+        "tonalRamp": [
+          "#5c2409",
+          "#9c3d14",
+          "#c44f1d",
+          "#e2622b",
+          "#ef9a74",
+          "#f7c4ab",
+          "#fbdccd",
+          "#fdf0ea"
+        ]
+      },
+      "danger-50": {
+        "role": "tertiary",
+        "displayName": "Critical Mist",
+        "tonalRamp": [
+          "#5c0f20",
+          "#961b33",
+          "#bb2440",
+          "#d9364f",
+          "#e8808f",
+          "#f2b3bc",
+          "#f9d2d7",
+          "#fdecee"
+        ]
+      },
+      "danger-100": {
+        "role": "tertiary",
+        "displayName": "Critical Wash",
+        "tonalRamp": [
+          "#5c0f20",
+          "#961b33",
+          "#bb2440",
+          "#d9364f",
+          "#e8808f",
+          "#f2b3bc",
+          "#f9d2d7",
+          "#fdecee"
+        ]
+      },
+      "danger-500": {
+        "role": "tertiary",
+        "displayName": "Critical Dot",
+        "tonalRamp": [
+          "#5c0f20",
+          "#961b33",
+          "#bb2440",
+          "#d9364f",
+          "#e8808f",
+          "#f2b3bc",
+          "#f9d2d7",
+          "#fdecee"
+        ]
+      },
+      "danger-600": {
+        "role": "tertiary",
+        "displayName": "Critical Red",
+        "tonalRamp": [
+          "#5c0f20",
+          "#961b33",
+          "#bb2440",
+          "#d9364f",
+          "#e8808f",
+          "#f2b3bc",
+          "#f9d2d7",
+          "#fdecee"
+        ]
+      },
+      "danger-700": {
+        "role": "tertiary",
+        "displayName": "Critical Ink",
+        "tonalRamp": [
+          "#5c0f20",
+          "#961b33",
+          "#bb2440",
+          "#d9364f",
+          "#e8808f",
+          "#f2b3bc",
+          "#f9d2d7",
+          "#fdecee"
+        ]
+      },
+      "canvas-lavender": {
+        "role": "neutral",
+        "displayName": "Lavender Canvas",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Sunken Lilac",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Firm Hairline",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Desk Ink",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted Plum-Grey",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "Night Panel",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      },
+      "night-2": {
+        "role": "neutral",
+        "displayName": "Night Panel Raised",
+        "tonalRamp": [
+          "#191629",
+          "#252139",
+          "#3b3752",
+          "#66617f",
+          "#cfc8e6",
+          "#e4e0f1",
+          "#efecf9",
+          "#f6f4fc"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Overview title inside the violet hero band."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles; hero stat values and large counts (tabular)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and section titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Tables, lists, notices, descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels, sentence-case table headers, meta lines."
+      },
+      "chip": {
+        "displayName": "Chip",
+        "purpose": "Status, severity and source chips."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Case IDs and hashes only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 2px rgb(40 26 92 / 0.04), 0 6px 18px -8px rgb(40 26 92 / 0.12)",
+        "purpose": "Every resting card and the nav tab group."
+      },
+      {
+        "name": "raised",
+        "value": "0 2px 4px rgb(40 26 92 / 0.06), 0 16px 32px -12px rgb(40 26 92 / 0.22)",
+        "purpose": "Hovered card links, hero band, night panel."
+      },
+      {
+        "name": "pop",
+        "value": "0 4px 10px rgb(25 22 41 / 0.08), 0 24px 48px -16px rgb(25 22 41 / 0.32)",
+        "purpose": "Menus, mobile nav popover, modal sheets."
+      },
+      {
+        "name": "violet-glow",
+        "value": "0 4px 12px -4px rgb(79 51 184 / 0.6)",
+        "purpose": "Under the active nav pill and wordmark tile only."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px rgb(103 71 217 / 0.15)",
+        "purpose": "Focus halo on inputs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for enter, pop, sheet, pill slide and bar growth."
+      },
+      {
+        "name": "enter",
+        "value": "260ms translateY(6px) to none, fade in",
+        "purpose": "Page and list-item entrance; lists stagger 30ms per item to 150ms."
+      },
+      {
+        "name": "pop",
+        "value": "200ms translateY(-4px) scale(0.98) to none",
+        "purpose": "Menus and popovers."
+      },
+      {
+        "name": "sheet",
+        "value": "240ms translateY(12px) scale(0.99) to none",
+        "purpose": "Modal sheets."
+      },
+      {
+        "name": "nav-pill-slide",
+        "value": "300ms transform,width",
+        "purpose": "Active tab pill tracking the current page."
+      },
+      {
+        "name": "bar-grow",
+        "value": "600ms scaleX(0) to 1 from left",
+        "purpose": "Progress bars and the case-stage track."
+      },
+      {
+        "name": "control-transition",
+        "value": "150ms ease",
+        "purpose": "Button, field and icon-button colour changes; press scale 0.98 at 100ms."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "durations to 0.01ms",
+        "purpose": "All motion collapses under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "container",
+        "value": "1440px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one violet action per context.",
+      "html": "<button class=\"ds-btn ds-btn-primary\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg>Uphold challenge</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:2.5rem;padding:0 1rem;border-radius:9999px;font-family:Figtree,ui-sans-serif,system-ui,sans-serif;font-size:.8125rem;font-weight:600;line-height:1;border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,transform 100ms ease;} .ds-btn:active{transform:scale(.98);} .ds-btn:focus-visible{outline:2px solid #6747d9;outline-offset:2px;} .ds-btn svg{width:1rem;height:1rem;} .ds-btn-primary{background:#4f33b8;color:#fff;box-shadow:0 1px 2px rgb(50 31 120 / .25);} .ds-btn-primary:hover{background:#40289a;}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "White pill with firm hairline for secondary actions.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">Refresh</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:2.5rem;padding:0 1rem;border-radius:9999px;font-family:Figtree,ui-sans-serif,system-ui,sans-serif;font-size:.8125rem;font-weight:600;line-height:1;border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,transform 100ms ease;} .ds-btn:active{transform:scale(.98);} .ds-btn:focus-visible{outline:2px solid #6747d9;outline-offset:2px;} .ds-btn svg{width:1rem;height:1rem;} .ds-btn-secondary{background:#fff;color:#191629;border-color:#cfc8e6;} .ds-btn-secondary:hover{background:#f3f0fd;border-color:#ad9bef;}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "In-card navigation link styled as a quiet pill.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">All complaints</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:2.5rem;padding:0 1rem;border-radius:9999px;font-family:Figtree,ui-sans-serif,system-ui,sans-serif;font-size:.8125rem;font-weight:600;line-height:1;border:1px solid transparent;cursor:pointer;transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,transform 100ms ease;} .ds-btn:active{transform:scale(.98);} .ds-btn:focus-visible{outline:2px solid #6747d9;outline-offset:2px;} .ds-btn svg{width:1rem;height:1rem;} .ds-btn-ghost{background:transparent;color:#40289a;} .ds-btn-ghost:hover{background:#f3f0fd;}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Sunken lilac input that turns white with a violet halo on focus.",
+      "html": "<label class=\"ds-label\">Message<input class=\"ds-field\" placeholder=\"Write to the reporter\"></label>",
+      "css": ".ds-label{display:block;font-family:Figtree,sans-serif;font-size:.75rem;font-weight:600;color:#3b3752;} .ds-field{display:block;margin-top:.375rem;width:100%;min-height:2.5rem;background:#f6f4fc;border:1px solid #e4e0f1;border-radius:.75rem;padding:.5rem .875rem;font:400 .8125rem Figtree,sans-serif;color:#191629;transition:border-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease;} .ds-field::placeholder{color:#8a85a0;} .ds-field:hover{border-color:#cfc8e6;} .ds-field:focus{outline:none;background:#fff;border-color:#6747d9;box-shadow:0 0 0 3px rgb(103 71 217 / .15);}"
+    },
+    {
+      "name": "Status and Severity Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Tinted pills, one meaning per hue.",
+      "html": "<div class=\"ds-row\"><span class=\"ds-chip ds-c-brand\">Committee assigned</span><span class=\"ds-chip ds-c-attn\">Under challenge</span><span class=\"ds-chip ds-c-teal\"><i class=\"ds-dot\" style=\"background:#13a594\"></i>Live backend</span><span class=\"ds-chip ds-c-danger\"><i class=\"ds-dot\" style=\"background:#d9364f\"></i>Critical</span></div>",
+      "css": ".ds-row{display:flex;flex-wrap:wrap;gap:.5rem;} .ds-chip{display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .625rem;border-radius:9999px;font:600 .6875rem/1.2 Figtree,sans-serif;white-space:nowrap;} .ds-dot{width:6px;height:6px;border-radius:9999px;display:inline-block;} .ds-c-brand{background:#f3f0fd;color:#40289a;} .ds-c-attn{background:#fdf0ea;color:#9c3d14;} .ds-c-teal{background:#e6f6f3;color:#0b7569;} .ds-c-danger{background:#fdecee;color:#961b33;}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The standard white section card on the lavender canvas.",
+      "html": "<div class=\"ds-canvas\"><section class=\"ds-card\"><h2>Priority queue</h2><p>Open cases you can access, highest triage severity first.</p><span class=\"ds-id\">INC-40198733</span></section></div>",
+      "css": ".ds-canvas{background:#efecf9;padding:1.25rem;} .ds-card{background:#fff;border-radius:1.25rem;box-shadow:0 1px 2px rgb(40 26 92 / .04),0 6px 18px -8px rgb(40 26 92 / .12);border:1px solid rgb(228 224 241 / .7);padding:1.5rem;font-family:Figtree,sans-serif;transition:box-shadow 200ms cubic-bezier(.16,1,.3,1),transform 200ms cubic-bezier(.16,1,.3,1),border-color 200ms ease;} .ds-card:hover{box-shadow:0 2px 4px rgb(40 26 92 / .06),0 16px 32px -12px rgb(40 26 92 / .22);transform:translateY(-1px);border-color:#cfc4f6;} .ds-card h2{margin:0;font-size:1rem;font-weight:600;color:#191629;} .ds-card p{margin:.125rem 0 .75rem;font-size:.8125rem;color:#66617f;} .ds-id{font:600 .75rem 'JetBrains Mono',ui-monospace,monospace;letter-spacing:-.01em;color:#40289a;}"
+    },
+    {
+      "name": "Top Tab Group",
+      "kind": "nav",
+      "refersTo": "nav-pill-active",
+      "description": "White pill tab group with the sliding violet active pill (signature).",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-tab ds-on\" aria-current=\"page\">Overview</a><a class=\"ds-tab\">Complaints</a><a class=\"ds-tab\">Committee <span class=\"ds-badge\">1</span></a><a class=\"ds-tab\">Inbox</a></nav>",
+      "css": ".ds-nav{display:inline-flex;gap:.25rem;padding:.25rem;border-radius:9999px;background:#fff;border:1px solid #e4e0f1;box-shadow:0 1px 2px rgb(40 26 92 / .04),0 6px 18px -8px rgb(40 26 92 / .12);font-family:Figtree,sans-serif;} .ds-tab{display:flex;align-items:center;gap:.375rem;padding:.5rem 1rem;border-radius:9999px;font-size:.8125rem;font-weight:600;color:#3b3752;cursor:pointer;transition:color 200ms ease,background-color 300ms cubic-bezier(.16,1,.3,1);} .ds-tab:hover{color:#40289a;} .ds-tab:focus-visible{outline:2px solid #6747d9;outline-offset:2px;} .ds-on{background:#4f33b8;color:#fff;box-shadow:0 4px 12px -4px rgb(79 51 184 / .6);} .ds-on:hover{color:#fff;} .ds-badge{min-width:1.125rem;height:1.125rem;padding:0 .25rem;border-radius:9999px;background:#e2622b;color:#fff;font-size:.625rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;}"
+    },
+    {
+      "name": "Next Actions Panel",
+      "kind": "custom",
+      "refersTo": "action-panel",
+      "description": "Night ink panel listing what the current role should do now.",
+      "html": "<section class=\"ds-night\"><h2>Next actions</h2><button class=\"ds-act\"><b>Challenge to Marcus Vance awaits review</b><small>Public humiliation in sprint reviews <code>INC-1EF3D400</code></small></button></section>",
+      "css": ".ds-night{background:#191629;color:#fff;border-radius:1.25rem;padding:1.5rem;font-family:Figtree,sans-serif;box-shadow:0 2px 4px rgb(40 26 92 / .06),0 16px 32px -12px rgb(40 26 92 / .22);} .ds-night h2{margin:0 0 .75rem;font-size:1rem;font-weight:600;} .ds-act{display:block;width:100%;text-align:left;background:transparent;border:0;color:#fff;padding:.5rem;border-radius:.75rem;cursor:pointer;transition:background-color 150ms ease;} .ds-act:hover{background:rgb(255 255 255 / .07);} .ds-act:focus-visible{outline:2px solid #6747d9;outline-offset:2px;} .ds-act b{display:block;font-size:.8125rem;font-weight:600;} .ds-act small{font-size:.75rem;color:rgb(255 255 255 / .7);} .ds-act code{font:.6875rem 'JetBrains Mono',monospace;color:rgb(255 255 255 / .45);margin-left:.5rem;}"
+    },
+    {
+      "name": "Case-Stage Track",
+      "kind": "custom",
+      "refersTo": "nav-pill-active",
+      "description": "Four-segment stage track in the dossier; echoes the nav pill.",
+      "html": "<ol class=\"ds-track\"><li><i style=\"background:#ad9bef\"></i>Submitted</li><li><i style=\"background:#ad9bef\"></i>Committee</li><li class=\"ds-cur\"><i style=\"background:#4f33b8\"></i>Investigation</li><li><i></i>Resolved</li></ol>",
+      "css": ".ds-track{display:grid;grid-template-columns:repeat(4,1fr);gap:.375rem;list-style:none;margin:0;padding:0;font:400 .75rem Figtree,sans-serif;color:#66617f;} .ds-track i{display:block;height:6px;border-radius:9999px;background:#f6f4fc;margin-bottom:.5rem;} .ds-cur{font-weight:600;color:#191629;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Case-Work Desk",
+    "overview": "A working desk for people who handle anonymous misconduct reports, not a vanity dashboard. The ground is a soft lavender that lets white cards float just above it; deep violet carries the one voice of action (primary buttons, the active navigation pill, the overview hero band), and a near-black ink panel holds the list of things to do now. Every number on screen is counted from real cases, challenges, witness summaries or audit events, so the system has no decorative KPI tiles, sparklines or trend charts to style.\n\nDensity is moderate and table-led: 13px body text, 12px labels, tabular numerals, rows that breathe at 10 to 12px vertical padding. Status and severity are carried by small rounded chips in tinted fills, each colour family bound to a meaning. Motion is short and expo-eased (200 to 300ms): cards rise on enter, the active nav pill slides between tabs, progress bars grow from the left. Everything collapses to zero under `prefers-reduced-motion`.",
+    "keyCharacteristics": [
+      "Lavender canvas, white 20px-radius cards with soft violet-tinted shadows.",
+      "One violet accent for action and \"where you are\"; teal only for verified/positive; orange only for needs-attention; red only for critical/destructive.",
+      "Pill geometry for anything you press or scan (buttons, chips, nav); generous rounded rectangles for anything that contains.",
+      "Figtree for all UI, JetBrains Mono only for case IDs and hashes.",
+      "Signature: the sliding violet pill in the top tab group, echoed by the four-segment case-stage track in the dossier."
+    ],
+    "rules": [
+      {
+        "name": "The One Meaning Per Hue Rule",
+        "body": "Violet means action or location, teal means verified or positive, orange means needs attention, red means critical or destructive. Never borrow a hue for decoration or for a second meaning.",
+        "section": "colors"
+      },
+      {
+        "name": "The Earned Teal Rule",
+        "body": "Teal appears only where the backend has actually reported a verified, live or resolved state. Never use it to make an unverified state look reassuring.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Is Evidence Rule",
+        "body": "JetBrains Mono is reserved for case IDs, hashes and other machine identifiers. Never set prose, numbers or headings in mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Labels, table headers and chips are sentence case at normal tracking. The only tracked, capitalised text in the build is the INCOGNITO wordmark.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Count Rule",
+        "body": "Every counted number (tables, stats, badges, timestamps) uses tabular numerals.",
+        "section": "typography"
+      },
+      {
+        "name": "The Soft Lift Rule",
+        "body": "Depth is ambient and violet-tinted. A card lifts 1px with the raised shadow and a brand-200 border on hover; nothing else moves.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** place every surface on the lavender canvas as a white 20px card with the card shadow and hairline border.",
+      "**Do** keep violet for action and location: primary buttons, the active nav pill, the overview hero band, the current stage.",
+      "**Do** bind every chip to the One Meaning Per Hue Rule: tinted 50/100 fill, 700-shade text.",
+      "**Do** set case IDs and hashes in JetBrains Mono 12px semibold, in brand-700 when they are links.",
+      "**Do** use tabular numerals for every count, date and timestamp.",
+      "**Do** use Lucide icons at 16px in buttons and 18px in nav and icon wells.",
+      "**Do** expo-ease motion (cubic-bezier(0.16, 1, 0.3, 1)) at 200 to 300ms and honour reduced motion."
+    ],
+    "donts": [
+      "**Don't** add decorative KPI tiles, sparklines, trend charts or calendars; every number must be counted from real cases, challenges, witness summaries or audit events.",
+      "**Don't** use teal for anything the backend has not reported as verified, live or resolved.",
+      "**Don't** introduce an amber or yellow; attention is orange.",
+      "**Don't** use hard offset shadows or square corners on cards and buttons.",
+      "**Don't** add uppercase tracked labels or kicker lines above headings; labels stay sentence case.",
+      "**Don't** set prose or headings in the mono face."
+    ]
+  }
+}

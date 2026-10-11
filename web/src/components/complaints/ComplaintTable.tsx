@@ -1,120 +1,77 @@
+import { ChevronRight, Lock } from 'lucide-react';
 import { Complaint } from '../../types/complaint';
 import { SeverityBadge } from '../ui/SeverityBadge';
 import { StatusBadge } from '../ui/StatusBadge';
-import { Shield, Lock, ArrowUpRight, Clock, FileText } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { categoryLabel, formatDate } from '../../lib/format';
 
 interface ComplaintTableProps {
   complaints: Complaint[];
   onSelectComplaint: (complaint: Complaint) => void;
+  /** Fewer columns, for the Overview. */
+  compact?: boolean;
 }
 
-export function ComplaintTable({ complaints, onSelectComplaint }: ComplaintTableProps) {
+export function ComplaintTable({ complaints, onSelectComplaint, compact = false }: ComplaintTableProps) {
   const { currentUser } = useAuth();
 
-  const formatCategory = (cat: string) => {
-    switch (cat) {
-      case 'bullying_authority_abuse':
-        return 'Bullying & Retaliation';
-      case 'sexual_harassment':
-        return 'Sexual Harassment';
-      case 'discrimination':
-        return 'Discrimination';
-      case 'whistleblowing_bribery':
-        return 'Bribery & Whistleblowing';
-      default:
-        return 'Misconduct';
-    }
-  };
-
   return (
-    <div className="bg-white rounded-3xl border border-stone-100 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
+    <>
+      {/* Table from md up */}
+      <div className={`hidden overflow-x-auto ${compact ? 'xl:block' : 'md:block'}`}>
+        <table className="w-full border-collapse text-left text-[0.8125rem]">
           <thead>
-            <tr className="border-b border-stone-100 bg-[#FAF7F5]/60 text-[11px] font-bold text-[#777487] uppercase tracking-wider">
-              <th className="py-4 px-5">Case Identifier</th>
-              <th className="py-4 px-4">Allegation Category</th>
-              <th className="py-4 px-4">Severity</th>
-              <th className="py-4 px-4">Case Status</th>
-              <th className="py-4 px-4">Anonymous Token</th>
-              <th className="py-4 px-4">Filed Timestamp</th>
-              <th className="py-4 px-4">Next Investigative Action</th>
-              <th className="py-4 px-5 text-right">Inspect</th>
+            <tr className="border-b border-line text-xs font-semibold text-muted">
+              <th scope="col" className="py-2.5 pl-1 pr-4 font-semibold">Case</th>
+              <th scope="col" className="px-4 py-2.5 font-semibold">Severity</th>
+              <th scope="col" className="px-4 py-2.5 font-semibold">Status</th>
+              {!compact && <th scope="col" className="px-4 py-2.5 font-semibold">Reporter token</th>}
+              <th scope="col" className="px-4 py-2.5 font-semibold">Next action</th>
+              <th scope="col" className="px-4 py-2.5 font-semibold">Filed</th>
+              <th scope="col" className="w-10 py-2.5"><span className="sr-only">Open</span></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-stone-100 text-xs">
+          <tbody>
             {complaints.map((item) => {
-              const isRevoked = item.revokedMemberIds.includes(currentUser.id);
-
+              const revoked = item.revokedMemberIds.includes(currentUser.id);
               return (
                 <tr
                   key={item.id}
                   onClick={() => onSelectComplaint(item)}
-                  className={`hover:bg-[#FAF7F5]/80 transition-colors cursor-pointer group ${
-                    isRevoked ? 'bg-red-50/40 opacity-75' : ''
-                  }`}
+                  className="group cursor-pointer border-b border-line/70 transition-colors last:border-0 hover:bg-brand-50/60"
                 >
-                  {/* Case ID */}
-                  <td className="py-4 px-5">
+                  <td className="max-w-[22rem] py-3 pl-1 pr-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-xl bg-purple-50 flex items-center justify-center text-[#5B3FA3] font-mono font-bold text-xs">
-                        <FileText className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <span className="font-mono font-bold text-[#191725] group-hover:text-[#5B3FA3] transition-colors">
-                          {item.id}
+                      <span className="case-id text-brand-700">{item.id}</span>
+                      {revoked && (
+                        <span className="chip bg-danger-50 text-danger-700">
+                          <Lock />
+                          Access revoked
                         </span>
-                        {isRevoked && (
-                          <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-800">
-                            <Lock className="w-2.5 h-2.5" />
-                            REVOKED
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
+                    <p className="mt-0.5 truncate font-semibold text-ink" title={item.title}>{item.title}</p>
+                    <p className="truncate text-xs text-muted">{categoryLabel(item.category, item.categoryLabel)}</p>
                   </td>
-
-                  {/* Category */}
-                  <td className="py-4 px-4 font-medium text-[#191725]">
-                    {formatCategory(item.category)}
+                  <td className="px-4 py-3"><SeverityBadge severity={item.severity} /></td>
+                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                  {!compact && (
+                    <td className="px-4 py-3 font-mono text-xs text-muted">{item.anonymousToken}</td>
+                  )}
+                  <td className="max-w-[16rem] px-4 py-3 text-ink-soft">
+                    <span className="line-clamp-2">{item.requiredNextAction}</span>
                   </td>
-
-                  {/* Severity */}
-                  <td className="py-4 px-4">
-                    <SeverityBadge severity={item.severity} />
-                  </td>
-
-                  {/* Status */}
-                  <td className="py-4 px-4">
-                    <StatusBadge status={item.status} />
-                  </td>
-
-                  {/* Anonymous Token */}
-                  <td className="py-4 px-4 font-mono text-[#777487] text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <Shield className="w-3 h-3 text-[#5B3FA3]" />
-                      <span>{item.anonymousToken}</span>
-                    </div>
-                  </td>
-
-                  {/* Timestamp */}
-                  <td className="py-4 px-4 text-[#777487] whitespace-nowrap">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-stone-400" />
-                      <span>{new Date(item.submittedAt).toLocaleDateString()}</span>
-                    </div>
-                  </td>
-
-                  {/* Next Action */}
-                  <td className="py-4 px-4 max-w-xs truncate text-[#777487]">
-                    <span className="font-medium text-[#191725]">{item.requiredNextAction}</span>
-                  </td>
-
-                  {/* Action Link */}
-                  <td className="py-4 px-5 text-right">
-                    <button className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-stone-100 hover:bg-[#5B3FA3] text-[#777487] hover:text-white transition-colors">
-                      <ArrowUpRight className="w-4 h-4" />
+                  <td className="whitespace-nowrap px-4 py-3 text-muted tabular">{formatDate(item.submittedAt)}</td>
+                  <td className="py-3 pr-1 text-right">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectComplaint(item);
+                      }}
+                      aria-label={`Open case ${item.id}`}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors group-hover:bg-brand-600 group-hover:text-white"
+                    >
+                      <ChevronRight className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
@@ -123,6 +80,39 @@ export function ComplaintTable({ complaints, onSelectComplaint }: ComplaintTable
           </tbody>
         </table>
       </div>
-    </div>
+
+      {/* Stacked list on small screens */}
+      <ul className={`stagger ${compact ? 'grid gap-2 md:grid-cols-2 xl:hidden' : 'space-y-2 md:hidden'}`}>
+        {complaints.map((item) => {
+          const revoked = item.revokedMemberIds.includes(currentUser.id);
+          return (
+            <li key={item.id}>
+              <button
+                onClick={() => onSelectComplaint(item)}
+                className="w-full rounded-2xl border border-line bg-surface p-3.5 text-left transition-colors hover:border-brand-200 hover:bg-brand-50/50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="case-id text-brand-700">{item.id}</span>
+                  <span className="text-xs text-muted tabular">{formatDate(item.submittedAt)}</span>
+                </div>
+                <p className="mt-1 text-sm font-semibold text-ink">{item.title}</p>
+                <p className="text-xs text-muted">{categoryLabel(item.category, item.categoryLabel)}</p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <SeverityBadge severity={item.severity} />
+                  <StatusBadge status={item.status} />
+                  {revoked && (
+                    <span className="chip bg-danger-50 text-danger-700">
+                      <Lock />
+                      Access revoked
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-ink-soft">{item.requiredNextAction}</p>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

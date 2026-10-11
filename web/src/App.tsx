@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DashboardLayout } from './components/layout/DashboardLayout';
-import { NavPage } from './components/layout/Sidebar';
+import { NavPage } from './components/layout/nav';
 import { ApiService } from './services/api';
 import { Complaint } from './types/complaint';
 
@@ -26,7 +26,7 @@ function AppContent() {
       if (first) setSelectedCaseId((cur) => cur || first);
     });
   }, [currentUser.id]);
-  const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(1);
+  const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(0);
 
   // Monitor challenges to update badge dynamically
   useEffect(() => {
@@ -66,13 +66,13 @@ function AppContent() {
           />
         );
       case 'committee':
-        return <CommitteeManagement />;
+        return <CommitteeManagement onOpenCase={(id) => handleNavigate('report_details', id)} />;
       case 'witness':
         return <WitnessQuorumPage />;
       case 'inbox':
         return <InvestigationInboxPage />;
       case 'repeat_allegations':
-        return <RepeatAllegations />;
+        return <RepeatAllegations onOpenCase={(id) => handleNavigate('report_details', id)} />;
       default:
         return <Dashboard onNavigate={handleNavigate} />;
     }

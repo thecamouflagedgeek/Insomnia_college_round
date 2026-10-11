@@ -1,70 +1,89 @@
 import { useEffect, useState } from 'react';
-import { HeartHandshake, EyeOff } from 'lucide-react';
+import { EyeOff, HeartHandshake } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { ReflectReformInsights } from '../../types/intelligence';
+import { Section } from './Section';
+import { SkeletonRows } from './Skeleton';
+import { EmptyState } from './EmptyState';
 
 /** Reflect & Reform: aggregate, anonymous reporter feedback on resolved cases plus committed reform actions.
  *  The backend withholds ratings until enough reporters responded that no rating is attributable. */
 export function ReflectReformCard() {
   const { currentUser } = useAuth();
   const [data, setData] = useState<ReflectReformInsights | null>(null);
+  const [state, setState] = useState<'loading' | 'ok' | 'unavailable' | 'forbidden'>('loading');
 
   useEffect(() => {
-    ApiService.getInsights().then((res) => setData(res.success ? res.data ?? null : null));
+    setState('loading');
+    ApiService.getInsights().then((res) => {
+      if (res.success && res.data) {
+        setData(res.data);
+        setState('ok');
+      } else {
+        setData(null);
+        setState(res.status === 403 ? 'forbidden' : 'unavailable');
+      }
+    });
   }, [currentUser.id]);
 
-  if (!data) return null; // live backend + HR/oversight role only
-
   return (
-    <div className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-purple-50 flex items-center justify-center text-[#5B3FA3]">
-          <HeartHandshake className="w-5 h-5" />
-        </div>
-        <div>
-          <h3 className="text-base font-bold text-[#191725]">Reflect & Reform</h3>
-          <p className="text-xs text-[#777487]">
-            {data.resolvedCases} resolved cases · anonymous reporter feedback on how they were handled
-          </p>
-        </div>
-      </div>
-
-      {data.suppressed ? (
-        <div className="p-3 bg-stone-100 rounded-2xl text-xs text-[#777487] flex items-center gap-2">
-          <EyeOff className="w-4 h-4" />
-          Ratings appear once at least {data.minimumResponses} reporters have responded, so no answer can be traced
-          to a person.
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <div className="p-3 bg-[#FAF7F5] rounded-2xl">
-            <div className="text-lg font-bold text-[#191725]">{data.averageFairness}/5</div>
-            <div className="text-[10px] text-[#777487]">Process felt fair</div>
-          </div>
-          <div className="p-3 bg-[#FAF7F5] rounded-2xl">
-            <div className="text-lg font-bold text-[#191725]">{data.feltSafePct}%</div>
-            <div className="text-[10px] text-[#777487]">Felt safe reporting</div>
-          </div>
-          <div className="p-3 bg-[#FAF7F5] rounded-2xl">
-            <div className="text-lg font-bold text-[#191725]">{data.wouldReportAgainPct}%</div>
-            <div className="text-[10px] text-[#777487]">Would report again</div>
-          </div>
-        </div>
+    <Section
+      className="h-full"
+      icon={<HeartHandshake />}
+      title="Reflect & Reform"
+      description={
+        data
+          ? `${data.resolvedCases} resolved case${data.resolvedCases === 1 ? '' : 's'} · anonymous reporter feedback` : 'Anonymous reporter feedback on resolved cases'
+      }
+    >
+      {state === 'loading' && <SkeletonRows rows={2} label="Loading insights" />}
+      {state === 'unavailable' && (
+        <EmptyState compact icon={<HeartHandshake />} title="Needs the live backend" description="Feedback insights are computed by the backend and are not part of the demo data." />
       )}
-
-      {data.reformActions.length > 0 && (
-        <div className="text-xs">
-          <div className="font-bold text-[#191725] mb-1">Reform actions committed</div>
-          <div className="flex flex-wrap gap-2">
-            {data.reformActions.map((a) => (
-              <span key={a.action} className="px-2.5 py-1 rounded-xl bg-purple-50 border border-purple-200 text-[#5B3FA3]">
-                {a.action} × {a.count}
+      {state === 'forbidden' && (
+        <EmptyState compact icon={<EyeOff />} title="Not visible to your role" description="Insights are limited to HR and oversight roles." />
+      )}
+      {state === 'ok' && data && (
+        <div className="space-y-4">
+          {data.suppressed ? (
+            <div className="flex items-start gap-2.5 rounded-xl bg-sunken p-3 text-[0.8125rem] text-ink-soft">
+              <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+              <span>
+                Ratings appear once at least {data.minimumResponses} reporters have responded, so no answer can be traced to a person.
               </span>
-            ))}
+            </div>
+          ) : (
+            <dl className="grid grid-cols-3 gap-2 text-center">
+              {[
+                { label: 'Felt fair', value: `${data.averageFairness}/5` },
+                { label: 'Felt safe', value: `${data.feltSafePct}%` },
+                { label: 'Would report again', value: `${data.wouldReportAgainPct}%` }
+              ].map((m) => (
+                <div key={m.label} className="rounded-xl bg-sunken px-2 py-3">
+                  <dd className="text-lg font-bold text-ink tabular">{m.value}</dd>
+                  <dt className="mt-0.5 text-[0.6875rem] text-muted">{m.label}</dt>
+                </div>
+              ))}
+            </dl>
+          )}
+          <div>
+            <h3 className="text-xs font-semibold text-ink-soft">Reform actions committed</h3>
+            {data.reformActions.length === 0 ? (
+              <p className="mt-1 text-[0.8125rem] text-muted">None recorded yet.</p>
+            ) : (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {data.reformActions.map((a) => (
+                  <li key={a.action} className="chip bg-brand-50 text-brand-700">
+                    {a.action}
+                    <span className="tabular text-brand-500">× {a.count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
-    </div>
+    </Section>
   );
 }

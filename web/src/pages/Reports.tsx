@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { FolderOpen, RefreshCw, SearchX } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { ApiService } from '../services/api';
 import { ComplaintTable } from '../components/complaints/ComplaintTable';
 import { ComplaintFilters } from '../components/complaints/ComplaintFilters';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Notice } from '../components/ui/Notice';
+import { EmptyState } from '../components/ui/EmptyState';
+import { SkeletonRows } from '../components/ui/Skeleton';
 import { useAuth } from '../hooks/useAuth';
-import { FolderGit2, ShieldAlert } from 'lucide-react';
 
 interface ReportsProps {
   onSelectComplaint: (complaint: Complaint) => void;
@@ -14,8 +18,8 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
   const { currentUser } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Filters state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
@@ -23,8 +27,10 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
 
   const loadReports = async () => {
     setLoading(true);
+    setError(null);
     const res = await ApiService.getReports();
-    if (res.data) setComplaints(res.data);
+    if (res.success && res.data) setComplaints(res.data);
+    else setError(res.error || 'Could not load complaints.');
     setLoading(false);
   };
 
@@ -32,74 +38,88 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
     loadReports();
   }, [currentUser.id]);
 
-  // Client-side filter evaluation
-  const filteredComplaints = complaints.filter((c) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchId = c.id.toLowerCase().includes(q);
-      const matchToken = c.anonymousToken.toLowerCase().includes(q);
-      const matchTitle = c.title.toLowerCase().includes(q);
-      if (!matchId && !matchToken && !matchTitle) return false;
-    }
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('all');
+    setSelectedSeverity('all');
+    setSelectedStatus('all');
+  };
 
+  const filtered = complaints.filter((c) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q && ![c.id, c.anonymousToken, c.title].some((v) => v.toLowerCase().includes(q))) return false;
     if (selectedCategory !== 'all' && c.category !== selectedCategory) return false;
     if (selectedSeverity !== 'all' && c.severity !== selectedSeverity) return false;
     if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
-
     return true;
   });
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-[#191725]">Authorized Complaints Roster</h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-[#5B3FA3] font-bold">
-              {filteredComplaints.length} Accessible
-            </span>
-          </div>
-          <p className="text-xs text-[#777487] mt-1">
-            Privacy-Preserved Case Roster • Zero employee names revealed • Protected under Whistleblower Protocol
-          </p>
-        </div>
-
-        {currentUser.role === 'committee_member' && (
-          <div className="text-xs px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-700" />
-            <span>Committee member access restricted to explicitly assigned dockets.</span>
-          </div>
-        )}
-      </div>
-
-      {/* Filter Bar */}
-      <ComplaintFilters
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedCategory={selectedCategory}
-        onCategoryChange={setSelectedCategory}
-        selectedSeverity={selectedSeverity}
-        onSeverityChange={setSelectedSeverity}
-        selectedStatus={selectedStatus}
-        onStatusChange={setSelectedStatus}
+    <div className="space-y-5">
+      <PageHeader
+        title="Complaints Queue"
+        description="Anonymous reports you are authorised to see. Reporter identities are never shown; tokens are case-specific."
+        actions={
+          <button className="btn btn-secondary btn-sm" onClick={loadReports} disabled={loading}>
+            <RefreshCw className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        }
       />
 
-      {/* Complaints Table */}
-      {loading ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-stone-100 text-xs text-[#777487]">
-          Retrieving authorized case dockets...
-        </div>
-      ) : filteredComplaints.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-stone-100 text-xs text-[#777487]">
-          No complaints match current filters or authorization scope.
-        </div>
-      ) : (
-        <ComplaintTable
-          complaints={filteredComplaints}
-          onSelectComplaint={onSelectComplaint}
-        />
+      {currentUser.role === 'committee_member' && (
+        <Notice tone="locked">Committee members see only the cases they are seated on.</Notice>
       )}
+
+      <section className="card card-pad space-y-4" aria-label="Complaints">
+        <ComplaintFilters
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedCategory={selectedCategory}
+          onCategoryChange={setSelectedCategory}
+          selectedSeverity={selectedSeverity}
+          onSeverityChange={setSelectedSeverity}
+          selectedStatus={selectedStatus}
+          onStatusChange={setSelectedStatus}
+          onClear={clearFilters}
+        />
+
+        {!loading && !error && (
+          <p className="text-xs text-muted" aria-live="polite">
+            Showing <span className="font-semibold text-ink tabular">{filtered.length}</span> of{' '}
+            <span className="tabular">{complaints.length}</span> cases
+          </p>
+        )}
+
+        {loading ? (
+          <SkeletonRows rows={6} label="Loading complaints" />
+        ) : error ? (
+          <Notice
+            tone="danger"
+            role="alert"
+            title="Complaints could not be loaded"
+            action={
+              <button className="btn btn-secondary btn-sm" onClick={loadReports}>
+                <RefreshCw />
+                Retry
+              </button>
+            }
+          >
+            {error}
+          </Notice>
+        ) : complaints.length === 0 ? (
+          <EmptyState icon={<FolderOpen />} title="No cases for your role" description="Cases appear here once you are assigned to them, or when new reports arrive." />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<SearchX />}
+            title="No cases match these filters"
+            description="Try a different search or clear the filters."
+            action={<button className="btn btn-secondary btn-sm" onClick={clearFilters}>Clear filters</button>}
+          />
+        ) : (
+          <ComplaintTable complaints={filtered} onSelectComplaint={onSelectComplaint} />
+        )}
+      </section>
     </div>
   );
 }

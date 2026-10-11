@@ -1,39 +1,23 @@
 import React from 'react';
+import { Inbox } from 'lucide-react';
 
 interface EmptyStateProps {
   title: string;
-  description: string;
+  description: React.ReactNode;
   icon?: React.ReactNode;
-  actionText?: string;
-  onAction?: () => void;
+  action?: React.ReactNode;
+  compact?: boolean;
 }
 
-export function EmptyState({
-  title,
-  description,
-  icon,
-  actionText,
-  onAction
-}: EmptyStateProps) {
+export function EmptyState({ title, description, icon, action, compact = false }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-3xl border border-stone-100 shadow-sm">
-      <div className="w-14 h-14 rounded-2xl bg-[#FAF5FF] flex items-center justify-center text-[#5B3FA3] mb-4">
-        {icon || (
-          <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )}
-      </div>
-      <h3 className="text-base font-semibold text-[#191725]">{title}</h3>
-      <p className="mt-1 text-sm text-[#777487] max-w-sm">{description}</p>
-      {actionText && onAction && (
-        <button
-          onClick={onAction}
-          className="mt-5 px-4 py-2 bg-[#5B3FA3] hover:bg-[#493184] text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
-        >
-          {actionText}
-        </button>
-      )}
+    <div className={`flex flex-col items-center text-center ${compact ? 'px-4 py-8' : 'px-6 py-14'}`}>
+      <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 [&>svg]:h-5 [&>svg]:w-5">
+        {icon ?? <Inbox />}
+      </span>
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      <p className="mt-1 max-w-sm text-[0.8125rem] text-muted text-pretty">{description}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

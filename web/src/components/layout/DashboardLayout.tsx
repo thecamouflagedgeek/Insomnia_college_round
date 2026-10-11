@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Sidebar, NavPage } from './Sidebar';
-import { Navbar } from './Navbar';
+import { TopBar } from './TopBar';
+import { NavPage } from './nav';
 import { ApiSecurityModal } from './ApiSecurityModal';
+import { useBackendStatus } from '../../hooks/useBackendStatus';
 
 interface DashboardLayoutProps {
   currentPage: NavPage;
@@ -10,44 +11,29 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-export function DashboardLayout({
-  currentPage,
-  onNavigate,
-  pendingChallengesCount = 1,
-  children
-}: DashboardLayoutProps) {
+export function DashboardLayout({ currentPage, onNavigate, pendingChallengesCount = 0, children }: DashboardLayoutProps) {
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const backendStatus = useBackendStatus();
 
   return (
-    <div className="min-h-screen bg-[#FAF7F5] font-sans antialiased text-[#191725]">
-      {/* 1. Fixed Left Sidebar (Full viewport height, independent nav scroll) */}
-      <Sidebar
+    <div className="min-h-screen bg-canvas text-ink">
+      <a
+        href="#main"
+        className="sr-only z-50 rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to content
+      </a>
+      <TopBar
         currentPage={currentPage}
         onNavigate={onNavigate}
         pendingChallengesCount={pendingChallengesCount}
+        backendStatus={backendStatus}
+        onOpenApiDebugger={() => setIsApiModalOpen(true)}
       />
-
-      {/* 2. Main Content Canvas (Offset by rounded floating sidebar, scrolls independently) */}
-      <div className="md:pl-[280px] flex flex-col min-h-screen min-w-0 pr-2">
-        <div className="relative z-50">
-          <Navbar
-            currentPage={currentPage}
-            onOpenApiDebugger={() => setIsApiModalOpen(true)}
-            pendingNotificationCount={pendingChallengesCount}
-          />
-        </div>
-
-        {/* 3. Main Page Body with smooth entry animation */}
-        <main key={currentPage} className="flex-1 px-4 pt-2 pb-6 min-w-0 page-enter relative z-0">
-          {children}
-        </main>
-      </div>
-
-      {/* Development / Judge Security API Testing Modal */}
-      <ApiSecurityModal
-        isOpen={isApiModalOpen}
-        onClose={() => setIsApiModalOpen(false)}
-      />
+      <main id="main" key={currentPage} className="mx-auto max-w-[1440px] animate-enter px-4 pb-12 pt-3 sm:px-6">
+        {children}
+      </main>
+      <ApiSecurityModal isOpen={isApiModalOpen} onClose={() => setIsApiModalOpen(false)} />
     </div>
   );
 }

@@ -1,228 +1,218 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, Clock, Copy, Check, Lock, RefreshCw, Send, UserRound, Users, XCircle } from 'lucide-react';
 import { WitnessInvitation, WitnessQuorumSummary } from '../../types/witness';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
-import {
-  Users,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  ShieldCheck,
-  Send,
-  AlertCircle,
-  Lock,
-  UserCheck
-} from 'lucide-react';
+import { Section } from '../ui/Section';
+import { Notice } from '../ui/Notice';
+import { EmptyState } from '../ui/EmptyState';
+import { SkeletonRows } from '../ui/Skeleton';
+import { formatDate } from '../../lib/format';
 
 interface WitnessQuorumPanelProps {
   complaintId: string;
 }
 
+const STATUS: Record<WitnessInvitation['status'], { label: string; cls: string; icon: React.ReactNode }> = {
+  accepted: { label: 'Participating', cls: 'bg-teal-50 text-teal-700', icon: <CheckCircle2 /> },
+  declined: { label: 'Declined', cls: 'bg-sunken text-muted', icon: <XCircle /> },
+  pending: { label: 'Awaiting reply', cls: 'bg-warn-50 text-warn-700', icon: <Clock /> }
+};
+
 export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
   const { currentUser } = useAuth();
-  const [invitations, setInvitations] = useState<WitnessInvitation[]>([]);
+  const [invitations, setInvitations] = useState<WitnessInvitation[] | null>(null);
   const [summary, setSummary] = useState<WitnessQuorumSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [newAlias, setNewAlias] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [issuedCode, setIssuedCode] = useState<{ alias: string; code: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const isAssignedInvestigator =
-    currentUser.role === 'assigned_investigator' || currentUser.role === 'administrator';
+  const isAssignedInvestigator = currentUser.role === 'assigned_investigator' || currentUser.role === 'administrator';
 
   const loadData = async () => {
+    setError(null);
     const [invRes, sumRes] = await Promise.all([
       ApiService.getWitnessInvitations(complaintId),
       ApiService.getWitnessQuorumSummary(complaintId)
     ]);
-    if (invRes.data) setInvitations(invRes.data);
-    if (sumRes.data) setSummary(sumRes.data);
+    if (invRes.success && invRes.data) setInvitations(invRes.data);
+    else {
+      setInvitations([]);
+      setError(invRes.error || 'Witness records unavailable');
+    }
+    setSummary(sumRes.success && sumRes.data ? sumRes.data : null);
   };
 
   useEffect(() => {
     setIssuedCode(null);
+    setInviteError(null);
+    setInvitations(null);
+    setSummary(null);
     loadData();
   }, [complaintId, currentUser.id]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAlias.trim()) return;
-
     setIsSubmitting(true);
+    setInviteError(null);
     const res = await ApiService.inviteWitness(complaintId, newAlias);
-    if (res.data?.witnessCode) setIssuedCode({ alias: res.data.anonymousAlias, code: res.data.witnessCode });
-    setNewAlias('');
+    if (res.success && res.data) {
+      if (res.data.witnessCode) setIssuedCode({ alias: res.data.anonymousAlias, code: res.data.witnessCode });
+      setNewAlias('');
+    } else {
+      setInviteError(res.error || 'The invitation could not be issued');
+    }
     setIsSubmitting(false);
     await loadData();
   };
 
+  const copyCode = async () => {
+    if (!issuedCode) return;
+    try {
+      await navigator.clipboard.writeText(issuedCode.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked: the code stays selectable */
+    }
+  };
+
+  const stats = summary
+    ? [
+        { label: 'Invited', value: summary.totalInvited },
+        { label: 'Participating', value: isAssignedInvestigator ? summary.accepted : null },
+        { label: 'Statements', value: summary.statementsSubmitted },
+        { label: 'Awaiting reply', value: isAssignedInvestigator ? summary.pending : null }
+      ]
+    : null;
+
   return (
-    <div className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-stone-100 gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-purple-50 flex items-center justify-center text-[#5B3FA3]">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-[#191725]">Witness Quorum Engine</h3>
-              {summary?.quorumMet && (
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300">
-                  Voluntary Quorum Reached (2+ Corroborating Statements)
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#777487]">
-              Case {complaintId} • Blinded voluntary corroboration without identity compromise
-            </p>
-          </div>
-        </div>
-
-        {/* Investigator Privilege Badge */}
-        <div>
-          {isAssignedInvestigator ? (
-            <span className="px-3 py-1 bg-purple-100 text-[#5B3FA3] text-xs font-bold rounded-full flex items-center gap-1.5 border border-purple-200">
-              <UserCheck className="w-3.5 h-3.5" />
-              Investigator Full Privilege
-            </span>
-          ) : (
-            <span className="px-3 py-1 bg-stone-100 text-stone-700 text-xs font-bold rounded-full flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5" />
-              Redacted (Investigator-Only Detail)
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Quorum Stats Bar */}
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-4 bg-[#FAF7F5] rounded-2xl border border-stone-200/70">
-            <span className="text-[11px] font-medium text-[#777487]">Invitations Issued</span>
-            <p className="text-2xl font-bold text-[#191725] mt-1">{summary.totalInvited}</p>
-          </div>
-          <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200">
-            <span className="text-[11px] font-medium text-emerald-800">Accepted</span>
-            <p className="text-2xl font-bold text-emerald-900 mt-1">
-              {isAssignedInvestigator ? summary.accepted : '***'}
-            </p>
-          </div>
-          <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200">
-            <span className="text-[11px] font-medium text-amber-800">Statements Recorded</span>
-            <p className="text-2xl font-bold text-amber-900 mt-1">{summary.statementsSubmitted}</p>
-          </div>
-          <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200">
-            <span className="text-[11px] font-medium text-[#5B3FA3]">Pending Responses</span>
-            <p className="text-2xl font-bold text-[#5B3FA3] mt-1">
-              {isAssignedInvestigator ? summary.pending : '***'}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Witness Roster */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-bold text-[#191725] uppercase tracking-wider">
-          Invited Witness Participation Log
-        </h4>
-
-        {invitations.map((w) => (
-          <div
-            key={w.id}
-            className="p-4 rounded-2xl bg-[#FAF7F5] border border-stone-200/70 flex items-center justify-between text-xs"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-white border border-stone-200 flex items-center justify-center text-[#5B3FA3]">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-bold text-[#191725]">{w.anonymousAlias}</p>
-                <p className="text-[10px] text-[#777487]">
-                  Invited: {new Date(w.invitedAt).toLocaleDateString()}
-                  {w.respondedAt && ` • Responded: ${new Date(w.respondedAt).toLocaleDateString()}`}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {w.statementProvided && (
-                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-[#5B3FA3] text-[10px] font-bold border border-purple-200">
-                  {w.statementLengthWords} Words Sealed
-                </span>
-              )}
-
-              {w.status === 'accepted' ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Participation Confirmed
-                </span>
-              ) : w.status === 'declined' ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-100 text-red-800 text-[11px] font-bold">
-                  <XCircle className="w-3 h-3" />
-                  Declined Voluntarily
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-200 text-stone-700 text-[11px] font-bold">
-                  <Clock className="w-3 h-3" />
-                  Awaiting Response
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Invite Form (Investigator Only) */}
-      {isAssignedInvestigator ? (
-        <form onSubmit={handleInvite} className="pt-2 border-t border-stone-100">
-          <label className="block text-xs font-bold text-[#191725] mb-2">
-            Issue Confidential Voluntary Invitation
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newAlias}
-              onChange={(e) => setNewAlias(e.target.value)}
-              placeholder="e.g. Witness Epsilon (Procurement Lead / Colleague)"
-              className="flex-1 bg-[#FAF7F5] border border-stone-200 rounded-2xl px-4 py-2.5 text-xs text-[#191725] focus:outline-none focus:border-[#5B3FA3]"
-            />
-            <button
-              type="submit"
-              disabled={isSubmitting || !newAlias.trim()}
-              className="px-5 py-2.5 bg-[#5B3FA3] hover:bg-[#493184] text-white text-xs font-bold rounded-2xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
-            >
-              <Send className="w-3.5 h-3.5 text-[#FFD08A]" />
-              <span>Issue Invite</span>
-            </button>
-          </div>
-          {issuedCode && (
-            <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-[11px] text-emerald-900">
-              Witness code for <strong>{issuedCode.alias}</strong>:{' '}
-              <code className="font-mono font-bold select-all">{issuedCode.code}</code>
-              <div className="mt-1 text-emerald-800">
-                Shown once. Hand it to the witness privately; they enter it in the INCOGNITO app to respond.
-              </div>
-            </div>
-          )}
-        </form>
-      ) : (
-        <div className="p-3 bg-stone-100 rounded-2xl text-[11px] text-[#777487] flex items-center gap-2">
-          <Lock className="w-4 h-4 text-stone-500" />
-          <span>
-            Only the assigned investigator (Elena Rostova) can issue new witness invitations.
+    <Section
+      icon={<Users />}
+      title="Witness quorum"
+      description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
+      action={
+        summary?.quorumMet ? (
+          <span className="chip bg-teal-50 text-teal-700">
+            <CheckCircle2 />
+            Quorum reached
           </span>
-        </div>
-      )}
+        ) : !isAssignedInvestigator ? (
+          <span className="chip bg-sunken text-muted" title="Participation details are visible to the assigned investigator only">
+            <Lock />
+            Partly redacted
+          </span>
+        ) : null
+      }
+    >
+      <div className="space-y-5">
+        {stats && (
+          <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {stats.map((s) => (
+              <div key={s.label} className="rounded-2xl bg-sunken px-4 py-3">
+                <dt className="text-xs font-medium text-muted">{s.label}</dt>
+                <dd className="mt-1 text-2xl font-bold text-ink tabular">
+                  {s.value === null ? (
+                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-muted" title="Visible to the assigned investigator only">
+                      <Lock className="h-3.5 w-3.5" />
+                      Hidden
+                    </span>
+                  ) : (
+                    s.value
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
 
-      {/* Ethical Principle Banner */}
-      <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-2xl text-[11px] text-purple-900 flex items-start gap-2">
-        <AlertCircle className="w-4 h-4 text-[#5B3FA3] shrink-0 mt-0.5" />
         <div>
-          <span className="font-bold">Procedural Safeguard: </span>
-          Witness participation is strictly voluntary and protected under Whistleblower Non-Retaliation Policy.
-          Witness presence or non-response is never considered proof of allegation validity.
+          <h3 className="mb-2 text-xs font-semibold text-ink-soft">Invitations</h3>
+          {invitations === null ? (
+            <SkeletonRows rows={2} label="Loading invitations" />
+          ) : error ? (
+            <Notice tone="locked">{error}</Notice>
+          ) : invitations.length === 0 ? (
+            <EmptyState compact icon={<UserRound />} title="No witnesses invited" description="Invitations issued by the assigned investigator appear here." />
+          ) : (
+            <ul className="stagger divide-y divide-line/70 rounded-2xl border border-line">
+              {invitations.map((w) => {
+                const st = STATUS[w.status] ?? STATUS.pending;
+                return (
+                  <li key={w.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                        <UserRound className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <p className="text-[0.8125rem] font-semibold text-ink">{w.anonymousAlias}</p>
+                        <p className="text-xs text-muted">
+                          Invited {formatDate(w.invitedAt)}
+                          {w.respondedAt && ` · replied ${formatDate(w.respondedAt)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 pl-11 sm:pl-0">
+                      {w.statementProvided && (
+                        <span className="chip bg-brand-50 text-brand-700 tabular">
+                          Statement{w.statementLengthWords ? ` · ${w.statementLengthWords} words` : ''}
+                        </span>
+                      )}
+                      <span className={`chip ${st.cls}`}>
+                        {st.icon}
+                        {st.label}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
+
+        {isAssignedInvestigator ? (
+          <form onSubmit={handleInvite} className="border-t border-line pt-4">
+            <label htmlFor={`alias-${complaintId}`} className="label">Invite a witness</label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id={`alias-${complaintId}`}
+                className="field flex-1"
+                value={newAlias}
+                onChange={(e) => setNewAlias(e.target.value)}
+                maxLength={80}
+                placeholder="Alias only, e.g. Witness Epsilon (colleague)"
+              />
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting || !newAlias.trim()}>
+                {isSubmitting ? <RefreshCw className="animate-spin" /> : <Send />}
+                {isSubmitting ? 'Issuing…' : 'Issue invite'}
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted">Use an alias. Never type a witness's real name here.</p>
+            {inviteError && <Notice tone="danger" role="alert" className="mt-3">{inviteError}</Notice>}
+            {issuedCode && (
+              <div role="status" className="mt-3 animate-enter rounded-2xl border border-teal-100 bg-teal-50 p-4 text-[0.8125rem] text-teal-700">
+                <p className="font-semibold">Witness code for {issuedCode.alias}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="select-all rounded-lg bg-surface px-3 py-1.5 font-mono text-sm font-semibold text-ink ring-1 ring-teal-100">
+                    {issuedCode.code}
+                  </code>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={copyCode}>
+                    {copied ? <Check /> : <Copy />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-ink-soft">Shown once. Give it to the witness privately; they enter it in the INCOGNITO app.</p>
+              </div>
+            )}
+          </form>
+        ) : (
+          <Notice tone="locked">Only the assigned investigator can issue witness invitations.</Notice>
+        )}
       </div>
-    </div>
+    </Section>
   );
 }

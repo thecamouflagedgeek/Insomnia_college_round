@@ -1,61 +1,19 @@
 import { ComplaintStatus } from '../../types/complaint';
+import { STATUS_LABEL } from '../../lib/format';
 
-interface StatusBadgeProps {
-  status: ComplaintStatus;
-  className?: string;
-}
+const CLS: Record<ComplaintStatus, string> = {
+  submitted: 'bg-sunken text-ink-soft ring-1 ring-inset ring-line',
+  committee_assigned: 'bg-brand-50 text-brand-700',
+  under_challenge: 'bg-attn-50 text-attn-700',
+  reassignment_pending: 'bg-warn-50 text-warn-700',
+  investigation_active: 'bg-brand-100 text-brand-800',
+  witness_quorum_active: 'bg-teal-50 text-teal-700',
+  resolved: 'bg-teal-100 text-teal-700',
+  archived: 'bg-sunken text-muted'
+};
 
-export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
-  const configs: Record<ComplaintStatus, { label: string; bg: string; text: string }> = {
-    submitted: {
-      label: 'Submitted',
-      bg: 'bg-stone-100',
-      text: 'text-stone-700'
-    },
-    committee_assigned: {
-      label: 'Committee Constituted',
-      bg: 'bg-purple-50 text-purple-800 border border-purple-200',
-      text: 'text-purple-800'
-    },
-    under_challenge: {
-      label: 'Conflict Challenged ⚠️',
-      bg: 'bg-amber-100 text-amber-900 border border-amber-300 font-bold',
-      text: 'text-amber-900'
-    },
-    reassignment_pending: {
-      label: 'Reassignment Pending',
-      bg: 'bg-orange-50 text-orange-800 border border-orange-200',
-      text: 'text-orange-800'
-    },
-    investigation_active: {
-      label: 'Investigation In Progress',
-      bg: 'bg-blue-50 text-blue-800 border border-blue-200',
-      text: 'text-blue-800'
-    },
-    witness_quorum_active: {
-      label: 'Witness Quorum Live',
-      bg: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-      text: 'text-emerald-800'
-    },
-    resolved: {
-      label: 'Formally Concluded',
-      bg: 'bg-teal-50 text-teal-800 border border-teal-200',
-      text: 'text-teal-800'
-    },
-    archived: {
-      label: 'Sealed & Archived',
-      bg: 'bg-stone-100 text-stone-600',
-      text: 'text-stone-600'
-    }
-  };
-
-  const config = configs[status] || { label: status, bg: 'bg-stone-100', text: 'text-stone-700' };
-
+export function StatusBadge({ status, className = '' }: { status: ComplaintStatus; className?: string }) {
   return (
-    <span
-      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${className}`}
-    >
-      {config.label}
-    </span>
+    <span className={`chip ${CLS[status] ?? 'bg-sunken text-ink-soft'} ${className}`}>{STATUS_LABEL[status] ?? status}</span>
   );
 }

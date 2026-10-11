@@ -8,14 +8,17 @@ export function useAccessibleCases() {
   const { currentUser } = useAuth();
   const [cases, setCases] = useState<Complaint[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     ApiService.getReports().then((res) => {
       const list = res.data || [];
       setCases(list);
       setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
+      setLoading(false);
     });
   }, [currentUser.id]);
 
-  return { cases, selectedCaseId, setSelectedCaseId };
+  return { cases, selectedCaseId, setSelectedCaseId, loading };
 }

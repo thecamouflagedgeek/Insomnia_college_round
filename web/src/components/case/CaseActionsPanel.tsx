@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { FileDown, GitCompareArrows, Gavel, CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, FileDown, Gavel, RefreshCw } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { Complaint } from '../../types/complaint';
 import { RelatedCases, ResolutionOutcome } from '../../types/intelligence';
+import { Section } from '../ui/Section';
+import { Notice } from '../ui/Notice';
+import { SkeletonRows } from '../ui/Skeleton';
+import { formatDateTime } from '../../lib/format';
 
 const OUTCOMES: Array<{ value: ResolutionOutcome; label: string }> = [
   { value: 'substantiated', label: 'Substantiated' },
@@ -12,158 +16,185 @@ const OUTCOMES: Array<{ value: ResolutionOutcome; label: string }> = [
   { value: 'resolved_informally', label: 'Resolved informally' }
 ];
 
-interface CaseActionsPanelProps {
+interface CaseOutcomePanelProps {
   complaint: Complaint;
   onChanged: () => void;
-  onOpenCase: (caseId: string) => void;
 }
 
-/** Legal Evidence Package, related cases (M3 correlation + repeat allegations) and resolution with reform actions. */
-export function CaseActionsPanel({ complaint, onChanged, onOpenCase }: CaseActionsPanelProps) {
+/** Resolution with reform actions (Reflect & Reform) and the Legal Evidence Package export. */
+export function CaseOutcomePanel({ complaint, onChanged }: CaseOutcomePanelProps) {
   const { currentUser } = useAuth();
-  const [related, setRelated] = useState<RelatedCases | null>(null);
   const [outcome, setOutcome] = useState<ResolutionOutcome>('substantiated');
   const [summary, setSummary] = useState('');
   const [actions, setActions] = useState('');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'export' | 'resolve' | null>(null);
 
   const canExport = ['assigned_investigator', 'hr_reviewer', 'independent_reviewer', 'administrator'].includes(currentUser.role);
   const canResolve = ['assigned_investigator', 'hr_reviewer', 'administrator'].includes(currentUser.role);
 
-  useEffect(() => {
-    ApiService.getRelatedCases(complaint.id).then((res) => setRelated(res.success ? res.data ?? null : null));
-  }, [complaint.id, currentUser.id]);
+  useEffect(() => setMessage(null), [complaint.id, currentUser.id]);
 
   const exportPackage = async () => {
-    setBusy(true);
+    setBusy('export');
     const res = await ApiService.downloadEvidencePackage(complaint.id);
-    setBusy(false);
+    setBusy(null);
     setMessage(
       res.success
-        ? { ok: true, text: `Evidence package ${res.data?.exportId} downloaded and recorded in the Silent Audit.` }
+        ? { ok: true, text: `Evidence package ${res.data?.exportId} downloaded. The export is recorded in the Silent Audit.` }
         : { ok: false, text: res.error || 'Export failed' }
     );
   };
 
   const resolve = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true);
+    setBusy('resolve');
     const res = await ApiService.resolveCase(
       complaint.id,
       outcome,
       summary.trim(),
       actions.split(',').map((a) => a.trim()).filter(Boolean)
     );
-    setBusy(false);
+    setBusy(null);
     if (res.success) {
-      setMessage({ ok: true, text: 'Resolution recorded and sealed. The reporter can now give anonymous feedback.' });
+      setMessage({ ok: true, text: 'Resolution recorded. The reporter can now give anonymous feedback.' });
       onChanged();
     } else {
       setMessage({ ok: false, text: res.error || 'Could not record the resolution' });
     }
   };
 
+  const summaryTooShort = summary.trim().length < 15;
+
+  return (
+    <Section
+      title="Outcome"
+      description="Record the resolution and export the legal record."
+    >
+      <div className="space-y-4">
+        {message && (
+          <Notice tone={message.ok ? 'success' : 'danger'} role={message.ok ? 'status' : 'alert'}>
+            {message.text}
+          </Notice>
+        )}
+
+        {complaint.resolution ? (
+          <div className="rounded-2xl bg-teal-50 p-4 text-[0.8125rem] text-teal-700">
+            <p className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="h-4 w-4" />
+              {OUTCOMES.find((o) => o.value === complaint.resolution!.outcome)?.label ?? complaint.resolution.outcome}
+            </p>
+            <p className="mt-1.5 text-ink-soft">{complaint.resolution.summary}</p>
+            {complaint.resolution.actions.length > 0 && (
+              <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                {complaint.resolution.actions.map((a) => (
+                  <li key={a} className="chip bg-surface text-teal-700 ring-1 ring-teal-100">{a}</li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2.5 text-xs text-muted">Recorded {formatDateTime(complaint.resolution.at)}</p>
+          </div>
+        ) : canResolve && ApiService.isLive() ? (
+          <form onSubmit={resolve} className="space-y-3">
+            <label className="block">
+              <span className="label">Outcome</span>
+              <select className="field" value={outcome} onChange={(e) => setOutcome(e.target.value as ResolutionOutcome)}>
+                {OUTCOMES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">Findings summary</span>
+              <textarea
+                className="field min-h-[5.5rem] resize-y"
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="Visible to staff only. The reporter sees the outcome and reform actions."
+                aria-describedby="summary-hint"
+              />
+              <span id="summary-hint" className="mt-1 block text-xs text-muted">At least 15 characters.</span>
+            </label>
+            <label className="block">
+              <span className="label">Reform actions</span>
+              <input
+                className="field"
+                value={actions}
+                onChange={(e) => setActions(e.target.value)}
+                placeholder="Comma-separated, e.g. Manager coaching, Team norms workshop"
+              />
+            </label>
+            <button type="submit" className="btn btn-primary w-full" disabled={busy !== null || summaryTooShort}>
+              {busy === 'resolve' ? <RefreshCw className="animate-spin" /> : <Gavel />}
+              {busy === 'resolve' ? 'Recording…' : 'Record resolution'}
+            </button>
+          </form>
+        ) : (
+          <p className="rounded-xl bg-sunken px-3 py-2.5 text-[0.8125rem] text-muted">
+            {canResolve ? 'Recording a resolution needs the live backend.' : 'No resolution recorded yet. Your role cannot record one.'}
+          </p>
+        )}
+
+        {canExport && (
+          <div className="border-t border-line pt-4">
+            <button className="btn btn-secondary w-full" onClick={exportPackage} disabled={busy !== null}>
+              {busy === 'export' ? <RefreshCw className="animate-spin" /> : <FileDown />}
+              {busy === 'export' ? 'Preparing PDF…' : 'Legal evidence package (PDF)'}
+            </button>
+            <p className="mt-1.5 text-center text-xs text-muted">Includes the audit trail so a third party can re-verify it.</p>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/** Incident correlation + repeat-allegation cues for this case. Cues for review, never findings. */
+export function RelatedCasesPanel({ complaintId, onOpenCase }: { complaintId: string; onOpenCase: (id: string) => void }) {
+  const { currentUser } = useAuth();
+  const [related, setRelated] = useState<RelatedCases | null>(null);
+  const [state, setState] = useState<'loading' | 'ok' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    setState('loading');
+    ApiService.getRelatedCases(complaintId).then((res) => {
+      setRelated(res.success ? res.data ?? null : null);
+      setState(res.success ? 'ok' : 'unavailable');
+    });
+  }, [complaintId, currentUser.id]);
+
   const similar = related?.similar ?? [];
   const repeatIds = related?.repeat.case_ids ?? [];
 
   return (
-    <div className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h3 className="text-base font-bold text-[#191725]">Case outcome & legal record</h3>
-        {canExport && (
-          <button
-            onClick={exportPackage}
-            disabled={busy}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#5B3FA3] hover:bg-[#493184] text-white text-xs font-bold rounded-2xl disabled:opacity-50"
-          >
-            <FileDown className="w-4 h-4" />
-            Legal Evidence Package (PDF)
-          </button>
-        )}
-      </div>
-
-      {message && (
-        <div
-          className={`p-3 rounded-2xl text-xs flex items-center gap-2 border ${
-            message.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'
-          }`}
-        >
-          {message.ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-          {message.text}
-        </div>
-      )}
-
-      {related && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-[#191725]">
-            <GitCompareArrows className="w-4 h-4 text-[#5B3FA3]" /> Related cases (review cues, not findings)
-          </div>
-          {repeatIds.length === 0 && similar.length === 0 ? (
-            <p className="text-xs text-[#777487]">No repeat subject or similar reports among cases you can access.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2 text-xs">
-              {repeatIds.map((id) => (
-                <button key={`r-${id}`} onClick={() => onOpenCase(id)}
-                  className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 font-mono font-bold">
-                  {id} · same subject
+    <Section title="Related cases" description="Review cues only. Similar wording or a shared subject is not a finding.">
+      {state === 'loading' ? (
+        <SkeletonRows rows={2} label="Loading related cases" />
+      ) : state === 'unavailable' ? (
+        <p className="text-[0.8125rem] text-muted">Related-case analysis runs on the live backend.</p>
+      ) : repeatIds.length === 0 && similar.length === 0 ? (
+        <p className="text-[0.8125rem] text-muted">No shared subject or similar reports among cases you can access.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {Array.from(new Set([...repeatIds, ...similar.map((x) => x.case_id)])).map((id) => {
+            const sim = similar.find((x) => x.case_id === id);
+            return (
+              <li key={id}>
+                <button
+                  onClick={() => onOpenCase(id)}
+                  className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 text-left transition-colors hover:border-brand-200 hover:bg-brand-50"
+                >
+                  <span className="case-id text-brand-700">{id}</span>
+                  <span className="flex flex-wrap gap-1">
+                    {repeatIds.includes(id) && <span className="chip bg-attn-50 text-attn-700">Same subject</span>}
+                    {sim && <span className="chip bg-brand-50 text-brand-700 tabular">Similarity {sim.score.toFixed(2)}</span>}
+                  </span>
                 </button>
-              ))}
-              {similar.map((s) => (
-                <button key={`s-${s.case_id}`} onClick={() => onOpenCase(s.case_id)}
-                  className="px-2.5 py-1 rounded-xl bg-purple-50 border border-purple-200 text-[#5B3FA3] font-mono font-bold">
-                  {s.case_id} · similarity {s.score.toFixed(2)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
-
-      {complaint.resolution ? (
-        <div className="p-4 bg-[#FAF7F5] rounded-2xl border border-stone-200 text-xs space-y-1">
-          <div className="font-bold text-[#191725] flex items-center gap-2">
-            <Gavel className="w-4 h-4 text-[#5B3FA3]" />
-            Resolved: {complaint.resolution.outcome.replace(/_/g, ' ')}
-          </div>
-          <p className="text-[#191725]">{complaint.resolution.summary}</p>
-          {complaint.resolution.actions.length > 0 && (
-            <p className="text-[#777487]">Reform actions: {complaint.resolution.actions.join(' · ')}</p>
-          )}
-        </div>
-      ) : canResolve && ApiService.isLive() ? (
-        <form onSubmit={resolve} className="space-y-3 pt-2 border-t border-stone-100">
-          <label className="block text-xs font-bold text-[#191725]">Record resolution (Reflect & Reform)</label>
-          <select
-            value={outcome}
-            onChange={(e) => setOutcome(e.target.value as ResolutionOutcome)}
-            className="w-full bg-[#FAF7F5] border border-stone-200 rounded-2xl px-3 py-2 text-xs"
-          >
-            {OUTCOMES.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <textarea
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            placeholder="Findings summary (HR-only; the reporter sees the outcome and reform actions)"
-            className="w-full bg-[#FAF7F5] border border-stone-200 rounded-2xl px-3 py-2 text-xs min-h-[70px]"
-          />
-          <input
-            value={actions}
-            onChange={(e) => setActions(e.target.value)}
-            placeholder="Reform actions, comma-separated (e.g. Manager coaching, Team norms workshop)"
-            className="w-full bg-[#FAF7F5] border border-stone-200 rounded-2xl px-3 py-2 text-xs"
-          />
-          <button
-            type="submit"
-            disabled={busy || summary.trim().length < 15}
-            className="px-4 py-2 bg-[#191725] text-white text-xs font-bold rounded-2xl disabled:opacity-40"
-          >
-            Record resolution
-          </button>
-        </form>
-      ) : null}
-    </div>
+    </Section>
   );
 }
