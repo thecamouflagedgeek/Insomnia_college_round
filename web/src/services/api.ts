@@ -130,8 +130,9 @@ export class ApiService {
       if (init.method && init.method !== 'GET') queueMicrotask(refreshDashboard);
       return { success: true, status: res.status, data: body as T, source: 'real_backend', timestamp: timestamp() };
     } catch {
-      if (this.mockFallback) return null;
-      return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: timestamp() };
+      // For mutations (POST, PUT, PATCH, DELETE), never silently fall back to mock when live request fails
+      if (this.mockFallback && (!init.method || init.method === 'GET')) return null;
+      return { success: false, status: 0, error: 'Backend unreachable: mutation was not persisted', source: 'real_backend', timestamp: timestamp() };
     }
   }
 

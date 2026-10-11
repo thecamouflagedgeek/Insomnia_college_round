@@ -14,7 +14,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { EvidenceIntegrityPanel } from '../components/complaints/EvidenceIntegrityPanel';
 import { WitnessQuorumPanel } from '../components/investigation/WitnessQuorumPanel';
 import { CaseOutcomePanel, RelatedCasesPanel } from '../components/case/CaseActionsPanel';
-import { AuditTimeline } from '../components/audit/AuditTimeline';
+import { HrInvestigationTimeline } from '../components/investigation/HrInvestigationTimeline';
 import { AccessDeniedBanner } from '../components/ui/AccessDeniedBanner';
 import { NavPage } from '../components/layout/nav';
 import { DEMO_USERS } from '../types/auth';
@@ -217,7 +217,7 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
 
           <EvidenceIntegrityPanel evidence={complaint.evidence} complaintId={complaint.id} />
           <WitnessQuorumPanel complaintId={complaint.id} />
-          <AuditTimeline complaintId={complaint.id} />
+          <HrInvestigationTimeline complaint={complaint} />
         </div>
 
         <div className="space-y-5 lg:col-span-4">

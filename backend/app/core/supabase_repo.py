@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -29,9 +30,10 @@ class IntegrationUnavailable(RuntimeError):
 class SupabaseRepository:
     """Canonical repository interfacing with PostgreSQL/Supabase tables."""
 
-    def __init__(self, client: Client, encryption_key: bytes | None = None):
+    def __init__(self, client: Client, encryption_key: bytes | None = None, storage_bucket: str | None = None):
         self.client = client
         self._key = encryption_key or get_encryption_key()
+        self.storage_bucket = storage_bucket or os.getenv("SUPABASE_STORAGE_BUCKET", "incognito-evidence")
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> SupabaseRepository:
@@ -46,7 +48,8 @@ class SupabaseRepository:
                 key = get_encryption_key()
             except Exception as e:
                 logger.warning("Encryption key not configured for Supabase repository: %s", e)
-            return cls(client, key)
+            bucket = getattr(settings, "supabase_storage_bucket", "incognito-evidence")
+            return cls(client, key, bucket)
         except Exception as exc:
             raise IntegrationUnavailable(f"Failed to connect to Supabase: {exc}") from exc
 
@@ -81,16 +84,20 @@ class SupabaseRepository:
 
         row = {
             "case_id": case_id,
+            "public_reference": case_id,
             "token_hash": report_dict.get("token_hash", ""),
             "category": report_dict.get("category") or report_dict.get("payload", {}).get("category", "Other"),
             "categories": report_dict.get("categories") or report_dict.get("payload", {}).get("categories", []),
             "encrypted_title": enc_title,
+            "summary_ciphertext": enc_title,
             "encrypted_narrative": enc_desc,
+            "description_ciphertext": enc_desc,
             "title_aad": title_aad,
             "narrative_aad": desc_aad,
             "incident_date": str(report_dict.get("incident_date") or report_dict.get("payload", {}).get("incident_date") or ""),
             "client_nonce": report_dict.get("client_nonce") or report_dict.get("payload", {}).get("client_nonce", ""),
             "subject_ref": report_dict.get("subject_ref") or report_dict.get("payload", {}).get("subject_ref"),
+            "accused_person": report_dict.get("subject_ref") or report_dict.get("payload", {}).get("subject_ref"),
             "status": report_dict.get("status", "submitted"),
             "severity": report_dict.get("severity", {}),
             "integrity_flags": list(report_dict.get("integrity_flags", [])),
@@ -98,9 +105,12 @@ class SupabaseRepository:
             "proof_tx": report_dict.get("proof_tx", ""),
             "investigator_id": report_dict.get("investigator_id", "usr_sarah"),
             "committee": report_dict.get("committee", []),
+            "committee_assignments": report_dict.get("committee", []),
             "revoked_ids": list(report_dict.get("revoked_ids", [])),
             "resolution": report_dict.get("resolution"),
+            "outcome": report_dict.get("resolution"),
             "reflection": report_dict.get("reflection"),
+            "feedback": report_dict.get("reflection"),
             "created_at": report_dict.get("created_at") or datetime.now(timezone.utc).isoformat(),
         }
         # Clean null dates
@@ -113,8 +123,10 @@ class SupabaseRepository:
         return self._format_report(res.data[0])
 
     def get_report(self, case_id: str) -> dict[str, Any] | None:
-        """Fetch a report by case_id and decrypt sensitive fields."""
+        """Fetch a report by case_id or public_reference and decrypt sensitive fields."""
         res = self.client.table("reports").select("*").eq("case_id", case_id).execute()
+        if not res.data:
+            res = self.client.table("reports").select("*").eq("public_reference", case_id).execute()
         if not res.data:
             return None
         return self._format_report(res.data[0])
@@ -125,27 +137,43 @@ class SupabaseRepository:
         return [self._format_report(row) for row in (res.data or [])]
 
     def update_report(self, case_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-        """Update fields of an existing report."""
+        """Update fields of an existing report supporting schema aliases."""
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if "resolution" in updates and "outcome" not in updates:
+            updates["outcome"] = updates["resolution"]
+        if "reflection" in updates and "feedback" not in updates:
+            updates["feedback"] = updates["reflection"]
+        if "committee" in updates and "committee_assignments" not in updates:
+            updates["committee_assignments"] = updates["committee"]
+
         res = self.client.table("reports").update(updates).eq("case_id", case_id).execute()
+        if not res.data:
+            res = self.client.table("reports").update(updates).eq("public_reference", case_id).execute()
         if not res.data:
             raise IntegrationUnavailable(f"Failed to update report {case_id} in Supabase")
         return self._format_report(res.data[0])
 
     def _format_report(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Transform raw DB row into domain Case dict with decrypted strings."""
-        case_id = row["case_id"]
+        """Transform raw DB row into domain Case dict with decrypted strings and alias support."""
+        case_id = row.get("case_id") or row.get("public_reference", "")
+        enc_title = row.get("encrypted_title") or row.get("summary_ciphertext")
+        enc_desc = row.get("encrypted_narrative") or row.get("description_ciphertext")
         title = ""
         description = ""
         try:
-            if row.get("encrypted_title"):
-                title = self._decrypt(row["encrypted_title"], "report", case_id, "title", row.get("title_aad"))
-            if row.get("encrypted_narrative"):
-                description = self._decrypt(row["encrypted_narrative"], "report", case_id, "narrative", row.get("narrative_aad"))
+            if enc_title:
+                title = self._decrypt(enc_title, "report", case_id, "title", row.get("title_aad"))
+            if enc_desc:
+                description = self._decrypt(enc_desc, "report", case_id, "narrative", row.get("narrative_aad"))
         except Exception as e:
             logger.error("Failed to decrypt report %s: %s", case_id, e)
             title = "[Decryption Failed]"
             description = "[Decryption Failed]"
+
+        resolution = row.get("resolution") or row.get("outcome")
+        reflection = row.get("reflection") or row.get("feedback")
+        committee = row.get("committee") or row.get("committee_assignments") or []
+        subject_ref = row.get("subject_ref") or row.get("accused_person")
 
         return {
             "case_id": case_id,
@@ -153,14 +181,14 @@ class SupabaseRepository:
             "status": row.get("status", "submitted"),
             "created_at": str(row.get("created_at", "")),
             "investigator_id": row.get("investigator_id", "usr_sarah"),
-            "committee": row.get("committee") or [],
+            "committee": committee,
             "revoked_ids": row.get("revoked_ids") or [],
             "nullifier": row.get("nullifier", ""),
             "proof_tx": row.get("proof_tx", ""),
             "severity": row.get("severity") or {},
             "integrity_flags": row.get("integrity_flags") or [],
-            "resolution": row.get("resolution"),
-            "reflection": row.get("reflection"),
+            "resolution": resolution,
+            "reflection": reflection,
             "payload": {
                 "title": title,
                 "description": description,
@@ -168,7 +196,7 @@ class SupabaseRepository:
                 "categories": row.get("categories") or [],
                 "incident_date": row.get("incident_date"),
                 "client_nonce": row.get("client_nonce", ""),
-                "subject_ref": row.get("subject_ref"),
+                "subject_ref": subject_ref,
             },
         }
 
@@ -183,14 +211,16 @@ class SupabaseRepository:
         size: int,
         sha256: str,
         file_bytes: bytes | None = None,
+        bucket: str | None = None,
     ) -> dict[str, Any]:
         """Store evidence metadata and upload file to private Supabase Storage bucket."""
         storage_path = f"cases/{case_id}/{evidence_id}"
+        bucket_name = bucket or self.storage_bucket
 
         # Upload file to private Supabase Storage if data is provided
         if file_bytes is not None:
             try:
-                self.client.storage.from_("evidence").upload(
+                self.client.storage.from_(bucket_name).upload(
                     path=storage_path,
                     file=file_bytes,
                     file_options={"content-type": mime, "upsert": "true"},
@@ -201,12 +231,17 @@ class SupabaseRepository:
         row = {
             "id": evidence_id,
             "case_id": case_id,
+            "report_reference": case_id,
             "name": name,
             "mime": mime,
+            "mime_type": mime,
             "size": size,
+            "file_size": size,
             "sha256": sha256,
+            "sha256_hash": sha256,
             "storage_path": storage_path,
-            "bucket": "evidence",
+            "storage_object_path": storage_path,
+            "bucket": bucket_name,
             "verification_status": "verified",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -216,6 +251,8 @@ class SupabaseRepository:
     def list_evidence(self, case_id: str) -> list[dict[str, Any]]:
         """Fetch evidence items attached to a case."""
         res = self.client.table("evidence_items").select("*").eq("case_id", case_id).execute()
+        if not res.data:
+            res = self.client.table("evidence_items").select("*").eq("report_reference", case_id).execute()
         return res.data or []
 
     # ---- Committee Challenges -----------------------------------------------------------------
@@ -234,9 +271,12 @@ class SupabaseRepository:
         row = {
             "id": challenge_id,
             "case_id": case_id,
+            "report_reference": case_id,
             "member_id": member_id,
+            "committee_member_reference": member_id,
             "reason": reason,
             "explanation": explanation,
+            "encrypted_rationale": explanation,
             "status": "pending_review",
             "proof_tx": proof_tx,
             "nullifier": nullifier,
@@ -257,6 +297,7 @@ class SupabaseRepository:
             "status": status,
             "reviewer_id": reviewer_id,
             "rationale": rationale,
+            "encrypted_decision_note": rationale,
             "decided_at": datetime.now(timezone.utc).isoformat(),
         }
         res = self.client.table("committee_challenges").update(updates).eq("id", challenge_id).execute()
@@ -266,7 +307,7 @@ class SupabaseRepository:
         """List challenges for a specific case or all cases."""
         query = self.client.table("committee_challenges").select("*")
         if case_id:
-            query = query.eq("case_id", case_id)
+            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
         res = query.order("created_at", desc=True).execute()
         return res.data or []
 
@@ -290,7 +331,9 @@ class SupabaseRepository:
         row = {
             "id": invitation_id,
             "case_id": case_id,
+            "report_reference": case_id,
             "code": code,
+            "token_hash": code,
             "role_alias": role_alias,
             "encrypted_contact": enc_contact,
             "contact_aad": contact_aad,
@@ -303,8 +346,10 @@ class SupabaseRepository:
         return row
 
     def get_witness_invitation_by_code(self, code: str) -> dict[str, Any] | None:
-        """Fetch witness invitation by code."""
+        """Fetch witness invitation by code or token_hash."""
         res = self.client.table("witness_invitations").select("*").eq("code", code).execute()
+        if not res.data:
+            res = self.client.table("witness_invitations").select("*").eq("token_hash", code).execute()
         return res.data[0] if res.data else None
 
     def update_witness_response(self, code: str, status: str) -> dict[str, Any]:
@@ -321,7 +366,7 @@ class SupabaseRepository:
         """List witness invitations."""
         query = self.client.table("witness_invitations").select("*")
         if case_id:
-            query = query.eq("case_id", case_id)
+            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
         res = query.order("created_at", desc=True).execute()
         return res.data or []
 
@@ -333,8 +378,11 @@ class SupabaseRepository:
         row = {
             "id": message_id,
             "case_id": case_id,
+            "report_reference": case_id,
             "sender": sender,
+            "sender_role": sender,
             "encrypted_body": enc_body,
+            "encrypted_message_body": enc_body,
             "body_aad": body_aad,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -352,7 +400,7 @@ class SupabaseRepository:
         res = (
             self.client.table("investigation_messages")
             .select("*")
-            .eq("case_id", case_id)
+            .or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
             .order("created_at", desc=False)
             .execute()
         )
@@ -360,14 +408,92 @@ class SupabaseRepository:
         for r in res.data or []:
             text = "[Encrypted Message]"
             try:
-                text = self._decrypt(r["encrypted_body"], "message", r["id"], "body", r.get("body_aad"))
+                body_cipher = r.get("encrypted_body") or r.get("encrypted_message_body")
+                if body_cipher:
+                    text = self._decrypt(body_cipher, "message", r["id"], "body", r.get("body_aad"))
             except Exception as e:
                 logger.error("Failed to decrypt message %s: %s", r["id"], e)
             out.append({
                 "message_id": r["id"],
-                "case_id": r["case_id"],
-                "sender": r["sender"],
+                "case_id": r.get("case_id") or r.get("report_reference"),
+                "sender": r.get("sender") or r.get("sender_role"),
                 "text": text,
                 "at": r["created_at"],
             })
         return out
+
+    # ---- Audit Events -------------------------------------------------------------------------
+
+    def insert_audit_event(
+        self,
+        case_id: str,
+        seq: int,
+        event_type: str,
+        payload: dict[str, Any],
+        salt: str = "",
+        commitment: str = "",
+        prev_hash: str = "",
+        entry_hash: str = "",
+    ) -> dict[str, Any]:
+        """Store an append-only audit event in Supabase."""
+        row = {
+            "case_id": case_id,
+            "report_reference": case_id,
+            "seq": seq,
+            "event_type": event_type,
+            "payload": payload,
+            "metadata": payload,
+            "actor_role": payload.get("actor_role", "system") if isinstance(payload, dict) else "system",
+            "salt": salt,
+            "commitment": commitment,
+            "prev_hash": prev_hash,
+            "previous_hash": prev_hash,
+            "entry_hash": entry_hash,
+            "event_hash": entry_hash,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table("audit_events").insert(row).execute()
+        return row
+
+    def list_audit_events(self, case_id: str | None = None) -> list[dict[str, Any]]:
+        """List audit events."""
+        query = self.client.table("audit_events").select("*")
+        if case_id:
+            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
+        res = query.order("seq", desc=False).execute()
+        return res.data or []
+
+    # ---- Incident Correlations ----------------------------------------------------------------
+
+    def insert_correlation(
+        self,
+        case_id_a: str,
+        case_id_b: str,
+        score: float,
+        method: str,
+        signals: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Store an advisory correlation pair in Supabase."""
+        row = {
+            "case_id_a": case_id_a,
+            "case_id_b": case_id_b,
+            "report_references": [case_id_a, case_id_b],
+            "score": score,
+            "similarity_score": score,
+            "method": method,
+            "signals": signals or [],
+            "review_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table("incident_correlations").upsert(
+            row, on_conflict="case_id_a,case_id_b,method"
+        ).execute()
+        return row
+
+    def list_correlations(self, case_id: str | None = None) -> list[dict[str, Any]]:
+        """List advisory incident correlations from Supabase."""
+        query = self.client.table("incident_correlations").select("*")
+        if case_id:
+            query = query.or_(f"case_id_a.eq.{case_id},case_id_b.eq.{case_id}")
+        res = query.order("score", desc=True).execute()
+        return res.data or []

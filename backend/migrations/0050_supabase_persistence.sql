@@ -58,7 +58,7 @@ create table if not exists evidence_items (
     size bigint not null,                              -- File size in bytes (max 20MB)
     sha256 text not null,                              -- SHA-256 content hash
     storage_path text,                                 -- Path in private Supabase Storage bucket e.g. "cases/CASE-2026-001/EVD-001"
-    bucket text not null default 'evidence',           -- Supabase Storage bucket name (private)
+    bucket text not null default 'incognito-evidence', -- Supabase Storage bucket name (private)
     verification_status text not null default 'verified',
     created_at timestamptz not null default now()
 );
@@ -170,10 +170,88 @@ create policy no_direct_anon_correlations on incident_correlations for all to an
 -- 8. STORAGE BUCKET CONFIGURATION (Supabase Storage)
 -- Create the private evidence bucket if not exists (public = false)
 insert into storage.buckets (id, name, public)
-values ('evidence', 'evidence', false)
+values ('incognito-evidence', 'incognito-evidence', false)
 on conflict (id) do update set public = false;
 
 -- Deny public reading of private evidence objects
 drop policy if exists deny_public_evidence_read on storage.objects;
 create policy deny_public_evidence_read on storage.objects
-    for select to anon using (bucket_id != 'evidence');
+    for select to anon using (bucket_id != 'incognito-evidence');
+
+-- ==============================================================================
+-- 9. SAFE ADDITIVE SCHEMA RECONCILIATION
+-- Ensures existing projects provisioned with baseline schema column names
+-- seamlessly support all application repository read/write paths.
+-- ==============================================================================
+
+-- reports table additive reconciliation
+alter table reports add column if not exists public_reference text;
+alter table reports add column if not exists summary_ciphertext text;
+alter table reports add column if not exists description_ciphertext text;
+alter table reports add column if not exists outcome jsonb;
+alter table reports add column if not exists feedback jsonb;
+alter table reports add column if not exists accused_person text;
+alter table reports add column if not exists committee_assignments jsonb default '[]'::jsonb;
+
+-- evidence_items table additive reconciliation
+alter table evidence_items add column if not exists report_reference text;
+alter table evidence_items add column if not exists storage_object_path text;
+alter table evidence_items add column if not exists sha256_hash text;
+alter table evidence_items add column if not exists mime_type text;
+alter table evidence_items add column if not exists file_size bigint;
+
+-- committee_challenges table additive reconciliation
+alter table committee_challenges add column if not exists report_reference text;
+alter table committee_challenges add column if not exists committee_member_reference text;
+alter table committee_challenges add column if not exists encrypted_rationale text;
+alter table committee_challenges add column if not exists encrypted_decision_note text;
+
+-- witness_invitations table additive reconciliation
+alter table witness_invitations add column if not exists report_reference text;
+alter table witness_invitations add column if not exists token_hash text;
+
+-- investigation_messages table additive reconciliation
+alter table investigation_messages add column if not exists report_reference text;
+alter table investigation_messages add column if not exists sender_role text;
+alter table investigation_messages add column if not exists encrypted_message_body text;
+
+-- audit_events table additive reconciliation
+alter table audit_events add column if not exists report_reference text;
+alter table audit_events add column if not exists actor_role text;
+alter table audit_events add column if not exists metadata jsonb;
+alter table audit_events add column if not exists previous_hash text;
+alter table audit_events add column if not exists event_hash text;
+alter table audit_events add column if not exists tx_hash text;
+
+-- incident_correlations table additive reconciliation
+alter table incident_correlations add column if not exists report_references jsonb;
+alter table incident_correlations add column if not exists similarity_score double precision;
+alter table incident_correlations add column if not exists encrypted_rationale text;
+alter table incident_correlations add column if not exists review_status text default 'pending';
+
+-- ==============================================================================
+-- 10. DEVELOPER READ-ONLY SCHEMA INSPECTION QUERY
+-- Run this read-only query in Supabase SQL Editor to verify remote table columns.
+-- ==============================================================================
+/*
+SELECT
+    table_name,
+    column_name,
+    data_type,
+    is_nullable
+FROM
+    information_schema.columns
+WHERE
+    table_schema = 'public'
+    AND table_name IN (
+        'reports',
+        'evidence_items',
+        'committee_challenges',
+        'witness_invitations',
+        'investigation_messages',
+        'audit_events',
+        'incident_correlations'
+    )
+ORDER BY
+    table_name, ordinal_position;
+*/

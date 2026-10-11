@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     supabase_publishable_key: str | None = None
     supabase_secret_key: str | None = None
     supabase_jwt_secret: str | None = None
+    supabase_storage_bucket: str = "incognito-evidence"
     encryption_key: str | None = None
     max_upload_bytes: int = 10 * 1024 * 1024
     witness_token_ttl_seconds: int = 604800

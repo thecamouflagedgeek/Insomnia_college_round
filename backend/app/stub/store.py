@@ -389,7 +389,7 @@ class StubStore:
                     invitation_id=inv["id"],
                     case_id=inv["case_id"],
                     code_hash=inv.get("code", ""),
-                    statement=inv.get("role_alias", ""),
+                    context=inv.get("role_alias", "Voluntary workplace investigation interview invitation."),
                     response="accept" if inv.get("status") == "accepted" else ("decline" if inv.get("status") == "declined" else None),
                     alias=inv.get("role_alias", ""),
                     invited_at=inv.get("created_at", now()),

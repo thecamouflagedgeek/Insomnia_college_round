@@ -23,18 +23,18 @@ const CONFLICT_LABEL: Record<CommitteeChallenge['conflictCategory'], string> = {
 const STATUS = {
   pending_independent_review: {
     label: 'Under challenge',
-    icon: <Clock className="h-3.5 w-3.5 shrink-0" />,
-    cls: 'bg-[#ea580c] text-white shadow-[0_0_10px_rgba(234,88,12,0.4)] ring-1 ring-orange-400/40'
+    icon: <Clock className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />,
+    cls: 'bg-[#c2410c] text-white ring-1 ring-inset ring-orange-900/20'
   },
   approved_access_revoked: {
     label: 'Upheld · access revoked',
-    icon: <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />,
-    cls: 'bg-[#059669] text-white shadow-[0_0_10px_rgba(5,150,105,0.35)] ring-1 ring-emerald-400/40'
+    icon: <CheckCircle2 className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />,
+    cls: 'bg-[#047857] text-white ring-1 ring-inset ring-emerald-900/20'
   },
   rejected_assignment_maintained: {
     label: 'Dismissed · member kept',
-    icon: <XCircle className="h-3.5 w-3.5 shrink-0" />,
-    cls: 'bg-[#64748b] text-white ring-1 ring-slate-400/40'
+    icon: <XCircle className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />,
+    cls: 'bg-[#475569] text-white ring-1 ring-inset ring-slate-800/20'
   }
 } as const;
 

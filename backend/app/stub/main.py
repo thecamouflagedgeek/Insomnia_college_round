@@ -146,9 +146,9 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
                        expose_headers=["X-Export-Id", "X-Content-SHA256", "Content-Disposition"])
     app.include_router(build_router(enroll_guard=enroll_guard, case_guard=case_guard))
     app.include_router(build_api_router())
+    app.include_router(build_hr_router())
     if app.state.admin_key:
         app.include_router(build_admin_router())
-        app.include_router(build_hr_router())
     return app
 
 

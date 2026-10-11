@@ -7,7 +7,7 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-/** Consistent prominent solid-color status badges across all dashboard tables, cards and dossier views */
+/** Restrained, professional status badges across all dashboard tables, cards and dossier views */
 export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
   const label = STATUS_LABEL[status] ?? status;
 
@@ -15,7 +15,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'under_challenge':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#ea580c] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(234,88,12,0.4)] ring-1 ring-orange-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#c2410c] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-orange-900/20 ${className}`}
         >
           <Clock className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -25,7 +25,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'investigation_active':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#4338ca] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_12px_rgba(67,56,202,0.5)] ring-1 ring-indigo-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#3730a3] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-indigo-900/20 ${className}`}
         >
           <Search className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -35,7 +35,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'committee_assigned':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#6b21a8] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(107,33,168,0.4)] ring-1 ring-purple-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#581c87] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-purple-900/20 ${className}`}
         >
           <Users className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -45,7 +45,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'witness_quorum_active':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#0f766e] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(15,118,110,0.35)] ring-1 ring-teal-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#0f766e] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-teal-900/20 ${className}`}
         >
           <Radio className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -55,7 +55,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'reassignment_pending':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#d97706] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(217,119,6,0.4)] ring-1 ring-amber-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#b45309] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-amber-900/20 ${className}`}
         >
           <RefreshCw className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -65,7 +65,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'resolved':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#059669] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(5,150,105,0.35)] ring-1 ring-emerald-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#047857] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-emerald-900/20 ${className}`}
         >
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 stroke-[2.2] text-white" />
           {label}
@@ -75,7 +75,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     case 'archived':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#475569] px-3 py-1 text-xs font-semibold text-white ring-1 ring-slate-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#475569] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-slate-800/20 ${className}`}
         >
           <Archive className="h-3.5 w-3.5 shrink-0 text-white" />
           {label}
@@ -86,7 +86,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
     default:
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full bg-[#64748b] px-3 py-1 text-xs font-semibold text-white shadow-[0_0_10px_rgba(100,116,139,0.3)] ring-1 ring-slate-400/40 ${className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full bg-[#475569] px-2.5 py-1 text-xs font-semibold text-white ring-1 ring-inset ring-slate-800/20 ${className}`}
         >
           <Inbox className="h-3.5 w-3.5 shrink-0 text-white" />
           {label}

@@ -97,154 +97,166 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
         }
       />
 
-      {/* Committee Formation & Assignment Workflow */}
-      <CommitteeFormationPanel onCommitteeAssigned={refresh} />
-
-      {/* Pool tabs */}
-      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        <div role="tablist" aria-label="Committee pools" className="flex w-max gap-1 rounded-full border border-line bg-surface p-1 shadow-[var(--shadow-card)]">
-          {COMMITTEE_POOLS.map((p) => {
-            const active = p.id === selectedPoolId;
-            const pending = pendingByPool(p.id);
-            return (
-              <button
-                key={p.id}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setSelectedPoolId(p.id)}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-[0.8125rem] font-semibold transition-colors duration-200 ${
-                  active ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-brand-50 hover:text-brand-700'
-                }`}
-              >
-                {p.name}
-                {pending > 0 && (
-                  <span
-                    className={`flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[0.625rem] font-bold tabular ${
-                      active ? 'bg-white text-brand-700' : 'bg-attn-500 text-white'
-                    }`}
-                    aria-label={`${pending} pending challenge${pending > 1 ? 's' : ''}`}
-                  >
-                    {pending}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+      {/* Two-Column Primary Layout: Formation on Left, Challenges on Right */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Left Column: Committee Formation and Assignment */}
+        <div className="space-y-5">
+          <CommitteeFormationPanel onCommitteeAssigned={refresh} />
         </div>
-      </div>
 
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-        <p className="text-sm text-ink-soft">{pool.description}</p>
-        <p className="text-xs text-muted">{pool.statutoryMandate}</p>
-      </div>
+        {/* Right Column: User Committee Challenges */}
+        <div ref={challengesRef} className="space-y-4">
+          <div className="card card-pad space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
+              <div className="flex items-center gap-2">
+                <Scale className="h-5 w-5 text-brand-600" />
+                <div>
+                  <h2 className="text-base font-semibold text-ink">User Committee Challenges</h2>
+                  <p className="text-xs text-muted">Impartiality objections raised by anonymous reporters.</p>
+                </div>
+              </div>
+              {!loading && (
+                <span className="chip bg-surface text-muted ring-1 ring-line tabular">
+                  {challenges.length} challenge{challenges.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
 
-      {pendingHere.length > 0 && (
-        <button
-          onClick={() => challengesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          className="flex w-full items-center gap-3 rounded-2xl border border-attn-100 bg-attn-50 px-4 py-3 text-left text-[0.8125rem] text-attn-700 transition-colors hover:border-attn-500/40"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="flex-1">
-            <span className="font-semibold">
-              {pendingHere.length} challenge{pendingHere.length > 1 ? 's' : ''} awaiting independent review.
-            </span>{' '}
-            Findings on the case wait for the decision.
-          </span>
-          <span className="shrink-0 font-semibold">Review ↓</span>
-        </button>
-      )}
+            {/* Pool Selector Tabs for Challenges */}
+            <div className="-mx-2 overflow-x-auto px-2">
+              <div
+                role="tablist"
+                aria-label="Committee pools"
+                className="flex w-max gap-1 rounded-full border border-line bg-surface p-1 shadow-sm"
+              >
+                {COMMITTEE_POOLS.map((p) => {
+                  const active = p.id === selectedPoolId;
+                  const pending = pendingByPool(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setSelectedPoolId(p.id)}
+                      className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
+                        active ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-brand-50 hover:text-brand-700'
+                      }`}
+                    >
+                      {p.name}
+                      {pending > 0 && (
+                        <span
+                          className={`flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[0.625rem] font-bold tabular ${
+                            active ? 'bg-white text-brand-700' : 'bg-attn-500 text-white'
+                          }`}
+                          aria-label={`${pending} pending challenge${pending > 1 ? 's' : ''}`}
+                        >
+                          {pending}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-        <Section
-          className="xl:col-span-5"
-          icon={<Users />}
-          title="Roster"
-          description={`${members.length} member${members.length === 1 ? '' : 's'} in ${pool.name}`}
-        >
-          {loading ? (
-            <SkeletonRows rows={3} label="Loading roster" />
-          ) : members.length === 0 ? (
-            <EmptyState compact icon={<Users />} title="No members in this pool" description="This pool has no vetted members yet." />
-          ) : (
-            <ul className="stagger space-y-2.5">
-              {members.map((m) => {
-                const st = MEMBER_STATUS[m.assignmentStatus] ?? MEMBER_STATUS.available;
-                const risk = RISK[m.conflictRiskLevel];
-                const u = DEMO_USERS.find((d) => d.id === m.id);
-                return (
-                  <li
-                    key={m.id}
-                    className={`rounded-2xl border p-3.5 ${
-                      m.assignmentStatus === 'challenged' ? 'border-attn-100 bg-attn-50/40' : 'border-line'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Avatar src={u?.avatar} name={m.name} size={36} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center justify-between gap-1.5">
-                          <p className="truncate text-[0.8125rem] font-semibold text-ink">{m.name}</p>
-                          <span className={`chip ${st.cls}`}>{st.label}</span>
-                        </div>
-                        <p className="truncate text-xs text-muted">
-                          {m.roleTitle} · {m.department}
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                          {risk && <span className={`chip ${risk.cls}`}>{risk.label}</span>}
-                          {m.assignedCaseIds.length > 0 ? (
-                            m.assignedCaseIds.map((id) => (
-                              <button
-                                key={id}
-                                onClick={() => onOpenCase?.(id)}
-                                disabled={!onOpenCase}
-                                className="case-id rounded-md bg-sunken px-1.5 py-0.5 text-brand-700 hover:bg-brand-50"
-                              >
-                                {id}
-                              </button>
-                            ))
-                          ) : (
-                            <span className="text-muted">No cases seated</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <p className="mt-4 flex items-start gap-2 border-t border-line pt-3 text-xs text-muted">
-            <Info className="mt-px h-3.5 w-3.5 shrink-0" />
-            Committees are seated automatically when a report is filed. A seat changes only through an upheld challenge.
-          </p>
-        </Section>
+            {pendingHere.length > 0 && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-attn-200 bg-attn-50 px-3.5 py-2.5 text-xs text-attn-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-attn-600" />
+                <span className="flex-1">
+                  <strong>{pendingHere.length} challenge{pendingHere.length > 1 ? 's' : ''}</strong> awaiting independent ombudsperson review.
+                </span>
+              </div>
+            )}
 
-        <div ref={challengesRef} className="scroll-mt-24 space-y-4 xl:col-span-7">
-          <div className="flex items-center gap-2">
-            <Scale className="h-[18px] w-[18px] text-brand-600" />
-            <h2 className="text-base font-semibold text-ink">Conflict challenges</h2>
-            {!loading && <span className="chip bg-surface text-muted ring-1 ring-line tabular">{challenges.length}</span>}
-          </div>
-          {loading ? (
-            <div className="card card-pad"><SkeletonRows rows={3} label="Loading challenges" /></div>
-          ) : ordered.length === 0 ? (
-            <div className="card">
+            {loading ? (
+              <SkeletonRows rows={3} label="Loading challenges" />
+            ) : ordered.length === 0 ? (
               <EmptyState
                 icon={<CheckCircle2 />}
                 title={`No challenges in ${pool.name}`}
-                description="Reporters can challenge a seated member for a conflict of interest from the INCOGNITO app. Challenges in other pools are counted on their tabs."
+                description="Reporters can challenge a seated member for a conflict of interest from the mobile app. Challenges in other pools are counted on their tabs."
               />
-            </div>
-          ) : (
-            ordered.map((ch) => <ChallengeReviewPanel key={ch.id} challenge={ch} onDecisionApplied={refresh} />)
-          )}
-          {!loading && members.some((m) => m.assignmentStatus === 'recused_conflict') && (
-            <p className="flex items-center gap-2 text-xs text-muted">
-              <UserX className="h-3.5 w-3.5" />
-              Removed members lose access to that case immediately; the server refuses their requests.
-            </p>
-          )}
+            ) : (
+              <div className="space-y-4">
+                {ordered.map((ch) => (
+                  <ChallengeReviewPanel key={ch.id} challenge={ch} onDecisionApplied={refresh} />
+                ))}
+              </div>
+            )}
+
+            {!loading && members.some((m) => m.assignmentStatus === 'recused_conflict') && (
+              <p className="flex items-center gap-2 border-t border-line/60 pt-3 text-xs text-muted">
+                <UserX className="h-3.5 w-3.5" />
+                Removed members lose access to that case immediately; the server refuses their requests.
+              </p>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Roster Section below */}
+      <Section
+        className="w-full"
+        icon={<Users />}
+        title={`Committee Pool Roster: ${pool.name}`}
+        description={`${members.length} member${members.length === 1 ? '' : 's'} vetted in ${pool.name}. ${pool.statutoryMandate}`}
+      >
+        {loading ? (
+          <SkeletonRows rows={2} label="Loading roster" />
+        ) : members.length === 0 ? (
+          <EmptyState compact icon={<Users />} title="No members in this pool" description="This pool has no vetted members yet." />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {members.map((m) => {
+              const st = MEMBER_STATUS[m.assignmentStatus] ?? MEMBER_STATUS.available;
+              const risk = RISK[m.conflictRiskLevel];
+              const u = DEMO_USERS.find((d) => d.id === m.id);
+              return (
+                <div
+                  key={m.id}
+                  className={`rounded-2xl border p-3.5 ${
+                    m.assignmentStatus === 'challenged' ? 'border-attn-100 bg-attn-50/40' : 'border-line'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar src={u?.avatar} name={m.name} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <p className="truncate text-[0.8125rem] font-semibold text-ink">{m.name}</p>
+                        <span className={`chip ${st.cls}`}>{st.label}</span>
+                      </div>
+                      <p className="truncate text-xs text-muted">
+                        {m.roleTitle} · {m.department}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                        {risk && <span className={`chip ${risk.cls}`}>{risk.label}</span>}
+                        {m.assignedCaseIds.length > 0 ? (
+                          m.assignedCaseIds.map((id) => (
+                            <button
+                              key={id}
+                              onClick={() => onOpenCase?.(id)}
+                              disabled={!onOpenCase}
+                              className="case-id rounded-md bg-sunken px-1.5 py-0.5 text-brand-700 hover:bg-brand-50"
+                            >
+                              {id}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-muted">No cases seated</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-4 flex items-start gap-2 border-t border-line pt-3 text-xs text-muted">
+          <Info className="mt-px h-3.5 w-3.5 shrink-0" />
+          Committees are seated automatically when a report is filed. A seat changes only through an upheld challenge.
+        </p>
+      </Section>
     </div>
   );
 }

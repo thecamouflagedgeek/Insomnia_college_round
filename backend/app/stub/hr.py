@@ -281,6 +281,14 @@ def build_hr_router() -> APIRouter:
             if c.status == "submitted":
                 c.status = "committee_assigned"
             _chain(request).audit.record(c.case_id, "committee_assigned", {"member_ids": body.member_ids})
+            if store.supabase:
+                try:
+                    store.supabase.update_report(c.case_id, {
+                        "status": c.status,
+                        "committee": c.committee,
+                    })
+                except Exception:
+                    pass
             store.save()
         return complaint_dto(request, c)
 
@@ -300,6 +308,11 @@ def build_hr_router() -> APIRouter:
         store = _store(request)
         with store.lock:
             m = add_message(request, c, "investigator", body.text)
+            if store.supabase:
+                try:
+                    store.supabase.insert_message(m.message_id, c.case_id, "investigator", body.text)
+                except Exception:
+                    pass
             store.save()
         return {"id": m.message_id, "sender": f"{user.name} ({user.title})", "text": m.text, "timestamp": m.at,
                 "isEncrypted": True}
@@ -345,6 +358,21 @@ def build_hr_router() -> APIRouter:
             if c.status == "committee_assigned":
                 _chain(request).audit.record(c.case_id, "status_changed", {"from": c.status, "to": "investigating"})
                 c.status = "investigating"
+            if store.supabase:
+                try:
+                    store.supabase.update_challenge_decision(
+                        ch.challenge_id,
+                        ch.status,
+                        user.id,
+                        body.rationale,
+                    )
+                    store.supabase.update_report(c.case_id, {
+                        "status": c.status,
+                        "committee": c.committee,
+                        "revoked_ids": c.revoked_ids,
+                    })
+                except Exception:
+                    pass
             store.save()
         return {"challenge": challenge_dto(c, ch), "updatedComplaint": complaint_dto(request, c)}
 
@@ -383,6 +411,16 @@ def build_hr_router() -> APIRouter:
         with store.lock:
             n = sum(i.case_id == case_id for i in store.invitations.values())
             inv, code = create_invitation(request, c, body.context, body.alias or f"Witness {chr(65 + n)}")
+            if store.supabase:
+                try:
+                    store.supabase.insert_witness_invitation(
+                        invitation_id=inv.invitation_id,
+                        case_id=c.case_id,
+                        code=inv.code_hash,
+                        role_alias=inv.alias,
+                    )
+                except Exception:
+                    pass
             store.save()
         dto = next(d for d in _witness_dtos(request, user, c) if d["id"] == inv.invitation_id)
         return {**dto, "witnessCode": code}
@@ -462,6 +500,14 @@ def build_hr_router() -> APIRouter:
             _chain(request).audit.record(case_id, "resolution_recorded", {"resolution_id": rid, "content_sha256": digest})
             _chain(request).audit.record(case_id, "status_changed", {"from": c.status, "to": "resolved"})
             c.status = "resolved"
+            if store.supabase:
+                try:
+                    store.supabase.update_report(case_id, {
+                        "status": "resolved",
+                        "resolution": c.resolution,
+                    })
+                except Exception:
+                    pass
             store.save()
         return complaint_dto(request, c)
 

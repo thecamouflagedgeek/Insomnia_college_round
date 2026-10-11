@@ -3,21 +3,61 @@ import { useEffect, useRef } from 'react';
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setInterval> | undefined;
 
-/** Refresh visible views together; mutations and returning to the tab refresh immediately. */
-export function refreshDashboard() {
+const SYNC_CHANNEL = 'incognito_cross_tab_sync';
+const STORAGE_KEY = 'incognito_dashboard_mutation_ts';
+let broadcastChannel: BroadcastChannel | undefined;
+
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    broadcastChannel = new BroadcastChannel(SYNC_CHANNEL);
+    broadcastChannel.onmessage = (event) => {
+      if (event.data === 'refresh') {
+        refreshDashboard(false);
+      }
+    };
+  } catch {
+    /* Fallback to storage event */
+  }
+}
+
+/** Refresh visible views together; mutations and returning to the tab refresh immediately across all browser tabs. */
+export function refreshDashboard(broadcast = true) {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
   listeners.forEach((refresh) => refresh());
+  if (broadcast) {
+    if (broadcastChannel) {
+      try {
+        broadcastChannel.postMessage('refresh');
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, String(Date.now()));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function handleStorageEvent(e: StorageEvent) {
+  if (e.key === STORAGE_KEY) {
+    refreshDashboard(false);
+  }
 }
 
 function subscribe(refresh: () => void) {
   listeners.add(refresh);
   if (!timer) {
-    timer = setInterval(refreshDashboard, 3000);
+    timer = setInterval(() => refreshDashboard(false), 3000);
     if (typeof window !== 'undefined') {
-      window.addEventListener('focus', refreshDashboard);
+      window.addEventListener('focus', () => refreshDashboard(false));
+      window.addEventListener('storage', handleStorageEvent);
     }
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', refreshDashboard);
+      document.addEventListener('visibilitychange', () => refreshDashboard(false));
     }
   }
   return () => {
@@ -28,10 +68,11 @@ function subscribe(refresh: () => void) {
         timer = undefined;
       }
       if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', refreshDashboard);
+        window.removeEventListener('focus', () => refreshDashboard(false));
+        window.removeEventListener('storage', handleStorageEvent);
       }
       if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', refreshDashboard);
+        document.removeEventListener('visibilitychange', () => refreshDashboard(false));
       }
     }
   };

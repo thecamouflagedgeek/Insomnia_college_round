@@ -99,8 +99,8 @@ async def upload_evidence(reference: str, file: UploadFile = File(...), claims: 
         if db.client:
             from uuid import uuid4
             evidence_id = f"EVD-{uuid4().hex[:8]}"
-            storage_path = f"cases/{reference}/{evidence_id}"
-            db.client.storage.from_("evidence").upload(
+            bucket_name = getattr(settings, "supabase_storage_bucket", "incognito-evidence")
+            db.client.storage.from_(bucket_name).upload(
                 path=storage_path,
                 file=data,
                 file_options={"content-type": validated.content_type, "upsert": "true"}
@@ -113,7 +113,7 @@ async def upload_evidence(reference: str, file: UploadFile = File(...), claims: 
                 "size": validated.size,
                 "sha256": validated.sha256,
                 "storage_path": storage_path,
-                "bucket": "evidence",
+                "bucket": bucket_name,
                 "verification_status": "verified"
             }).execute()
             storage_uploaded = True

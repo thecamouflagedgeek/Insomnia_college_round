@@ -6,14 +6,14 @@ interface SeverityBadgeProps {
   className?: string;
 }
 
-/** Redesigned severity badge: prominent solid pills with outer glow for critical & high */
+/** Restrained, professional severity badge: consistent pill dimensions without artificial glowing shadows or decorative dots */
 export function SeverityBadge({ severity, className = '' }: SeverityBadgeProps) {
   if (severity === 'critical') {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full bg-[#c81e1e] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white shadow-[0_0_12px_rgba(220,38,38,0.7)] ring-1 ring-red-400/40 ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full bg-[#b91c1c] px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-inset ring-red-900/20 ${className}`}
       >
-        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.5]" />
+        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.2]" />
         CRITICAL
       </span>
     );
@@ -22,9 +22,9 @@ export function SeverityBadge({ severity, className = '' }: SeverityBadgeProps) 
   if (severity === 'high') {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full bg-[#ea580c] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white shadow-[0_0_10px_rgba(234,88,12,0.6)] ring-1 ring-orange-400/40 ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full bg-[#c2410c] px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-inset ring-orange-900/20 ${className}`}
       >
-        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.5]" />
+        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.2]" />
         HIGH
       </span>
     );
@@ -33,9 +33,9 @@ export function SeverityBadge({ severity, className = '' }: SeverityBadgeProps) 
   if (severity === 'medium') {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full bg-[#d97706] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white shadow-[0_0_8px_rgba(217,119,6,0.35)] ring-1 ring-amber-400/40 ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full bg-[#b45309] px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-inset ring-amber-900/20 ${className}`}
       >
-        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.2]" />
+        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2]" />
         MEDIUM
       </span>
     );
@@ -43,9 +43,8 @@ export function SeverityBadge({ severity, className = '' }: SeverityBadgeProps) 
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full bg-[#64748b] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-slate-400/40 ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full bg-[#475569] px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-inset ring-slate-800/20 ${className}`}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-slate-200" />
       LOW
     </span>
   );

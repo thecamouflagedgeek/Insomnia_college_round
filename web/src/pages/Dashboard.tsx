@@ -4,16 +4,11 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   AlertTriangle,
   ArrowRight,
-  Check,
   FolderOpen,
   History,
-  Inbox,
   Radio,
   RefreshCw,
-  Scale,
-  Search,
-  ShieldAlert,
-  Users
+  Scale
 } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge } from '../types/committee';
@@ -30,6 +25,7 @@ import { NavPage } from '../components/layout/nav';
 import { useAuth } from '../hooks/useAuth';
 import { ROLE_LABEL } from '../lib/people';
 import { SEVERITY_ORDER, STATUS_LABEL, isOpen, relativeTime } from '../lib/format';
+import { CaseProgressCalendarModal } from '../components/case/CaseProgressCalendarModal';
 
 interface DashboardProps {
   onNavigate: (page: NavPage, selectedCaseId?: string) => void;
@@ -59,6 +55,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [witness, setWitness] = useState<WitnessTally | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCaseForModal, setSelectedCaseForModal] = useState<Complaint | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [hiddenBelow, setHiddenBelow] = useState(0);
 
@@ -335,12 +332,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       </div>
 
-      {/* Row 2: priority queue + case progress */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+      {/* Row 2: priority queue (full width) with calendar modal on case selection */}
+      <div className="grid grid-cols-1 gap-5">
         <Section
-          className="lg:col-span-8"
+          className="w-full"
           title="Priority queue"
-          description="Open cases you can access, highest triage severity first."
+          description="Open cases you can access, highest triage severity first. Select any case to view its progress calendar and milestones."
           action={
             <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('reports')}>
               All complaints
@@ -362,27 +359,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               }
             />
           ) : (
-            <ComplaintTable compact complaints={priority} onSelectComplaint={(c) => onNavigate('report_details', c.id)} />
-          )}
-        </Section>
-
-        <Section
-          className="flex flex-col lg:col-span-4"
-          bodyClassName="flex flex-1 flex-col"
-          title="Case progress"
-          description="Where accessible cases sit in the process."
-        >
-          {loading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-1/2" />
-              <Skeleton className="h-3 w-full" />
-              <SkeletonRows rows={3} />
-            </div>
-          ) : (
-            <StageBreakdown complaints={complaints} resolved={resolvedCount} />
+            <ComplaintTable
+              compact
+              complaints={priority}
+              onSelectComplaint={(c) => setSelectedCaseForModal(c)}
+            />
           )}
         </Section>
       </div>
+
+      {/* Case-specific Progress Calendar & Milestones Modal */}
+      <CaseProgressCalendarModal
+        complaint={selectedCaseForModal}
+        isOpen={selectedCaseForModal !== null}
+        onClose={() => setSelectedCaseForModal(null)}
+        onNavigateToDossier={(caseId) => onNavigate('report_details', caseId)}
+        onNavigateToComplaints={() => onNavigate('reports')}
+      />
 
       {/* Row 3: recent activity + Reflect & Reform */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -487,158 +480,3 @@ const KIND_TONE: Record<NextAction['tone'], string> = {
   danger: 'text-danger-600',
   teal: 'text-teal-700'
 };
-
-interface StageConfig {
-  key: Complaint['status'][];
-  label: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  hexFill: string;
-  hexStroke: string;
-  iconColor: string;
-  barColor: string;
-}
-
-const STAGES: StageConfig[] = [
-  {
-    key: ['submitted'],
-    label: 'Submitted',
-    subtitle: 'Initial case filing and entry',
-    icon: <Inbox className="h-4 w-4" />,
-    hexFill: 'fill-[#f8fafc]',
-    hexStroke: 'stroke-[#cbd5e1]',
-    iconColor: 'text-[#64748b]',
-    barColor: 'bg-[#cbd5e1]'
-  },
-  {
-    key: ['committee_assigned', 'reassignment_pending'],
-    label: 'Committee',
-    subtitle: 'Assigned to review board',
-    icon: <Users className="h-4 w-4" />,
-    hexFill: 'fill-[#fbf9fe]',
-    hexStroke: 'stroke-[#c084fc]/60',
-    iconColor: 'text-[#8b5cf6]',
-    barColor: 'bg-[#c084fc]'
-  },
-  {
-    key: ['under_challenge'],
-    label: 'Under challenge',
-    subtitle: 'Reviewing objections',
-    icon: <ShieldAlert className="h-4 w-4" />,
-    hexFill: 'fill-[#fff7ed]',
-    hexStroke: 'stroke-[#f97316]/60',
-    iconColor: 'text-[#ea580c]',
-    barColor: 'bg-[#f97316]'
-  },
-  {
-    key: ['investigation_active', 'witness_quorum_active'],
-    label: 'Investigating',
-    subtitle: 'Fact-gathering and active inquiry',
-    icon: <Search className="h-4 w-4" />,
-    hexFill: 'fill-[#f5f3ff]',
-    hexStroke: 'stroke-[#4f33b8]/50',
-    iconColor: 'text-[#4f33b8]',
-    barColor: 'bg-[#4f33b8]'
-  },
-  {
-    key: ['resolved', 'archived'],
-    label: 'Resolved',
-    subtitle: 'Final resolution and closure',
-    icon: <Check className="h-4 w-4 stroke-[2.8]" />,
-    hexFill: 'fill-[#f8fafc]',
-    hexStroke: 'stroke-[#cbd5e1]',
-    iconColor: 'text-[#64748b]',
-    barColor: 'bg-[#cbd5e1]'
-  }
-];
-
-function SoftHexagonBadge({
-  icon,
-  fill,
-  stroke,
-  iconColor
-}: {
-  icon: React.ReactNode;
-  fill: string;
-  stroke: string;
-  iconColor: string;
-}) {
-  return (
-    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-        <path
-          d="M 50 6 Q 53 6 56 8 L 89 27 Q 93 29 93 34 L 93 66 Q 93 71 89 73 L 56 92 Q 53 94 50 94 Q 47 94 44 92 L 11 73 Q 7 71 7 66 L 7 34 Q 7 29 11 27 L 44 8 Q 47 6 50 6 Z"
-          className={`${fill} ${stroke}`}
-          strokeWidth="3.2"
-        />
-      </svg>
-      <span className={`relative z-10 ${iconColor}`}>{icon}</span>
-    </div>
-  );
-}
-
-function StageBreakdown({ complaints, resolved }: { complaints: Complaint[]; resolved: number }) {
-  const total = complaints.length;
-  if (total === 0) {
-    return <EmptyState compact title="No cases yet" description="Progress appears once cases are assigned to your role." />;
-  }
-  const rows = STAGES.map((s) => ({
-    ...s,
-    count: complaints.filter((c) => s.key.includes(c.status)).length
-  }));
-
-  return (
-    <div className="flex flex-1 flex-col">
-      <p className="flex items-baseline gap-1.5 border-b border-line pb-3 text-ink">
-        <span className="text-[2.25rem] font-bold leading-none tracking-tight tabular">{resolved}</span>
-        <span className="text-sm text-muted">of {total} resolved</span>
-      </p>
-
-      {/* Horizontal rows for each stage */}
-      <ol className="flex flex-1 flex-col justify-between gap-3.5 pt-3.5" aria-label="Cases by stage">
-        {rows.map((r) => {
-          const percent = total > 0 ? (r.count / total) * 100 : 0;
-          const displayDenominator = r.label === 'Submitted' && r.count === 0 ? 0 : total;
-          return (
-            <li key={r.label} className="flex items-center gap-3.5">
-              {/* Soft hexagonal icon badge on the left */}
-              <SoftHexagonBadge
-                icon={r.icon}
-                fill={r.hexFill}
-                stroke={r.hexStroke}
-                iconColor={r.iconColor}
-              />
-
-              {/* Stage title, subtitle, and progress bar in the middle */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[0.875rem] font-semibold text-ink">{r.label}</span>
-                  {/* Fraction metric aligned to the far right */}
-                  <span className="shrink-0 text-xs font-bold tabular text-ink">
-                    {r.count} / {displayDenominator}
-                  </span>
-                </div>
-                <p className="truncate text-[0.75rem] text-muted">{r.subtitle}</p>
-
-                {/* Rounded horizontal progress bar beneath subtitle */}
-                <div className="relative mt-2 h-2.5 w-full rounded-full bg-[#eef2f6] overflow-hidden flex items-center justify-center">
-                  {r.count > 0 && (
-                    <div
-                      className={`bar-grow absolute left-0 top-0 bottom-0 rounded-full ${r.barColor}`}
-                      style={{ width: `${percent}%` }}
-                    />
-                  )}
-                  {r.label === 'Resolved' && r.count === 0 && (
-                    <span className="relative z-10 text-[0.625rem] text-slate-500 font-medium">
-                      0 of {total} resolved
-                    </span>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
