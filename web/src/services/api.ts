@@ -709,6 +709,36 @@ export class ApiService {
     return (await this.live<ReflectReformInsights>('/insights')) ?? this.unavailable();
   }
 
+  /** Opens a stored (metadata-cleaned) evidence file for staff; the backend audits every opening. The caller revokes
+   *  the returned object URL when the preview closes. */
+  public static async openEvidenceFile(
+    complaintId: string,
+    evidenceId: string
+  ): Promise<ApiResponse<{ url: string; mime: string; sha256: string }>> {
+    if (this.forceMock) return this.unavailable();
+    try {
+      const res = await fetch(
+        `${this.apiBaseUrl}/hr/cases/${encodeURIComponent(complaintId)}/evidence/${encodeURIComponent(evidenceId)}/file`,
+        { headers: { 'X-Stub-Admin': this.stubAdminKey, 'X-Staff-Id': this.user.id } }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const error = body?.detail?.message || body?.detail?.reason || `HTTP ${res.status}`;
+        return { success: false, status: res.status, error, source: 'real_backend', timestamp: new Date().toISOString() };
+      }
+      const blob = await res.blob();
+      return {
+        success: true,
+        status: 200,
+        data: { url: URL.createObjectURL(blob), mime: blob.type, sha256: res.headers.get('X-Content-SHA256') || '' },
+        source: 'real_backend',
+        timestamp: new Date().toISOString()
+      };
+    } catch {
+      return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: new Date().toISOString() };
+    }
+  }
+
   /** Legal Evidence Package: downloads the PDF (the backend records the export in the Silent Audit). */
   public static async downloadEvidencePackage(complaintId: string): Promise<ApiResponse<{ exportId: string }>> {
     if (this.forceMock) return this.unavailable();

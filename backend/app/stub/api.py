@@ -272,15 +272,16 @@ def build_api_router() -> APIRouter:
         store = _store(request)
         digest = lambda b: hashlib.sha256(b).hexdigest()
         with store.lock:
-            elsewhere = {h for c in store.cases.values() if c.case_id != case.case_id
-                         for e in c.evidence for h in (e.sha256, e.original_sha256) if h}
+            others = [e for c in store.cases.values() if c.case_id != case.case_id for e in c.evidence]
+            elsewhere = {h for e in others for h in (e.sha256, e.original_sha256) if h}
             incident = case.payload.get("incident_date")
             check = evidence_check.analyse(content, file.content_type or "", date.fromisoformat(incident)
-                                           if incident else None, elsewhere, digest)
+                                           if incident else None, elsewhere, digest, (file.filename or "file")[:200],
+                                           {e.phash for e in others if e.phash})
             # The cleaned copy (identifying metadata removed) is what is stored, sealed and later shown to staff.
             sha = digest(check.content)
-            ev = Evidence(new_id("EVD"), (file.filename or "file")[:200], check.mime, len(check.content), sha,
-                          base64.b64encode(check.content).decode(), check.flags, digest(content))
+            ev = Evidence(new_id("EVD"), check.name, check.mime, len(check.content), sha,
+                          base64.b64encode(check.content).decode(), check.flags, digest(content), check.phash)
             case.evidence.append(ev)
             _chain(request).audit.record(case.case_id, "evidence_sealed", {
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})

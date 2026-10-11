@@ -47,6 +47,7 @@ const _eventTitles = {
   'status_changed': 'Status changed',
   'resolution_recorded': 'Resolution recorded',
   'export_generated': 'Evidence package exported',
+  'evidence_viewed': 'Evidence opened by staff',
   'reflection_recorded': 'Feedback received',
 };
 

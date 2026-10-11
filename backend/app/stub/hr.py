@@ -9,6 +9,7 @@ access rules the dashboard used to check in the browser:
   invites witnesses; witness responses are masked for everyone else.
 
 Stand-in auth: X-Stub-Admin (the stub's shared key) + X-Staff-Id (who is acting). M2's real auth replaces both."""
+import base64
 import hashlib
 import secrets
 from typing import Literal
@@ -164,11 +165,13 @@ def challenge_dto(case: Case, ch: ChallengeRec) -> dict:
         "decisionRationale": ch.rationale, "decidedAt": ch.decided_at, "blockchainVerificationTx": ch.proof_tx}
 
 
-def _audit_details(event_type: str, data: dict) -> tuple[str, str]:
+def _audit_details(event_type: str, data: dict, offline: bool = False) -> tuple[str, str]:
     name = lambda i: STAFF.get(i, {}).get("name", i)  # noqa: E731
     return {
-        "complaint_submitted": ("Employee (ZK proof verified)", "Anonymous report sealed; Semaphore proof validated "
-                                "on-chain."),
+        "complaint_submitted": (("Employee (offline test chain: proof not checked)", "Anonymous report sealed. Offline "
+                                 "test chain: the Semaphore proof was not checked cryptographically.") if offline else
+                                ("Employee (ZK proof verified)", "Anonymous report sealed; Semaphore proof validated "
+                                 "on-chain.")),
         "case_classified": ("Classification engine", f"Classified as {data.get('category')}."),
         "committee_assigned": ("Case assignment", "Committee assigned: "
                                + ", ".join(name(i) for i in data.get("member_ids", [])) + "."),
@@ -188,6 +191,7 @@ def _audit_details(event_type: str, data: dict) -> tuple[str, str]:
         "resolution_recorded": ("Investigation team", "Resolution and reform actions recorded."),
         "reflection_recorded": ("Employee (anonymous)", "Reflect & Reform feedback received."),
         "export_generated": ("Legal export", f"Evidence package {data.get('export_id')} generated."),
+        "evidence_viewed": (name(data.get("staff_id")), f"Opened evidence file {data.get('evidence_id')}."),
         "witness_response_recorded": ("Witness (anonymous)", f"Responses: {data.get('accepted_count')} accepted, "
                                       f"{data.get('declined_count')} declined."),
     }.get(event_type, ("System", event_type.replace("_", " ")))
@@ -200,7 +204,8 @@ def audit_dtos(request: Request, case: Case) -> list[dict]:
     out = []
     for e in chain.verifier.verify(case.case_id).events:
         r = receipts.get(e.seq)
-        actor, details = _audit_details(e.event_type, stored[e.seq].payload.get("data", {}))
+        actor, details = _audit_details(e.event_type, stored[e.seq].payload.get("data", {}),
+                                        request.app.state.chain_mode == "offline")
         out.append({
             "id": f"{case.case_id}-{e.seq}", "complaintId": case.case_id,
             "eventType": _AUDIT_TYPE.get(e.event_type, e.event_type), "timestamp": e.at, "actorRef": actor,
@@ -411,6 +416,21 @@ def build_hr_router() -> APIRouter:
             if can_access(user, c):
                 out.extend(audit_dtos(request, c))
         return sorted(out, key=lambda d: d["timestamp"], reverse=True)
+
+    @r.get("/cases/{case_id}/evidence/{evidence_id}/file")
+    def evidence_file(request: Request, case_id: str, evidence_id: str, user: Staff = Depends(staff)):
+        """The stored (cleaned) evidence file. Same access rules as the case; every opening is audited."""
+        c = _case_for(request, user, case_id)
+        ev = next((e for e in c.evidence if e.evidence_id == evidence_id), None)
+        if ev is None:
+            raise HTTPException(404, {"reason": "evidence_not_found"})
+        store = _store(request)
+        with store.lock:
+            _chain(request).audit.record(c.case_id, "evidence_viewed", {"evidence_id": evidence_id, "staff_id": user.id})
+            store.save()
+        return Response(base64.b64decode(ev.content_b64), media_type=ev.mime,
+                        headers={"X-Content-SHA256": ev.sha256, "Cache-Control": "no-store",
+                                 "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
 
     @r.get("/cases/{case_id}/evidence/{evidence_id}/verify")
     def verify_evidence(request: Request, case_id: str, evidence_id: str, user: Staff = Depends(staff)):

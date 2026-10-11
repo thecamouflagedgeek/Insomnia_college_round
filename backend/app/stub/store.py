@@ -71,6 +71,7 @@ class Evidence:
     # file filed on another case. Neither reveals capture time, place or device.
     flags: list[dict] = field(default_factory=list)
     original_sha256: str = ""
+    phash: str = ""  # image difference hash, for near-duplicates across cases
 
 
 @dataclass
