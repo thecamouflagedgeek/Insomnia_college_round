@@ -1,6 +1,8 @@
 import '../features/story/story_state.dart';
 import '../integration/live_providers.dart';
 
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -13,6 +15,7 @@ class Report {
     required this.description,
     required this.date,
     this.files = const [],
+    this.evidence = const [],
     this.suggestedCategories = const [],
     this.dateIsIncident = true,
     List<CommitteeMember>? committee,
@@ -20,6 +23,8 @@ class Report {
   final String id, category, title, description;
   final DateTime date;
   final List<String> files;
+  /// Uploaded evidence as the backend stores it (live mode only; demo selections are never uploaded).
+  final List<EvidenceRef> evidence;
   final List<String> suggestedCategories;
   final bool dateIsIncident;
   final List<CommitteeMember> committee;
@@ -35,6 +40,16 @@ class Report {
       'Could you share the approximate time of the incident?',
     ),
   ];
+}
+
+class EvidenceRef {
+  const EvidenceRef(this.id, this.name, this.mime, this.size, this.sha256);
+  final String id, name, mime, sha256;
+  final int size;
+  bool get isImage => mime == 'image/jpeg' || mime == 'image/png' || mime == 'image/webp' || mime == 'image/gif';
+  bool get isText => mime.startsWith('text/');
+  /// The backend removes identifying metadata from these types before storing them.
+  bool get metadataRemoved => mime == 'image/jpeg' || mime == 'image/png' || mime == 'image/webp';
 }
 
 class CommitteeMember {
@@ -106,6 +121,8 @@ abstract interface class EmployeeRepository {
   Future<List<Invitation>> invitations();
   Future<void> respond(Invitation invitation, String response);
   Future<List<AuditEvent>> audit(Report report);
+  /// The stored copy of one of this case's evidence files (what staff see).
+  Future<Uint8List> evidenceFile(Report report, EvidenceRef item);
 }
 
 class DemoRepository implements EmployeeRepository, StoryReportRepository {
@@ -262,6 +279,10 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
   }
 
   @override
+  Future<Uint8List> evidenceFile(Report report, EvidenceRef item) async =>
+      throw StateError('Demo evidence selections are never uploaded.');
+
+  @override
   Future<List<AuditEvent>> audit(Report report) async {
     await _delay();
     return [
@@ -330,6 +351,9 @@ final invitationsProvider = FutureProvider(
 );
 final auditProvider = FutureProvider.family<List<AuditEvent>, Report>(
   (ref, report) => ref.watch(repositoryProvider).audit(report),
+);
+final evidenceFileProvider = FutureProvider.autoDispose.family<Uint8List, (Report, EvidenceRef)>(
+  (ref, arg) => ref.watch(repositoryProvider).evidenceFile(arg.$1, arg.$2),
 );
 final sessionProvider = NotifierProvider<Session, bool>(Session.new);
 

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:intl/intl.dart';
 
@@ -89,6 +90,16 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       dateIsIncident: incident != null,
       files: [
         for (final e in view['evidence'] as List) (e as Json)['name'] as String,
+      ],
+      evidence: [
+        for (final e in (view['evidence'] as List).cast<Json>())
+          EvidenceRef(
+            e['evidence_id'] as String,
+            e['name'] as String,
+            e['mime'] as String,
+            (e['size'] as num).toInt(),
+            e['sha256'] as String,
+          ),
       ],
       suggestedCategories: List<String>.from(view['categories'] as List),
       committee: [
@@ -305,6 +316,11 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     final out = await _api.respond(code, invitation.id, value);
     invitation.response = out['response'] as String;
   }
+
+  @override
+  Future<Uint8List> evidenceFile(Report report, EvidenceRef item) async => Uint8List.fromList(
+    await _api.evidenceFile(report.id, await _token(report.id), item.id),
+  );
 
   @override
   Future<List<AuditEvent>> audit(Report report) async {

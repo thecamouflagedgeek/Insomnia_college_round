@@ -460,6 +460,11 @@ class DetailsScreen extends StatelessWidget {
         'View Silent Audit',
         () => context.push('/case/${report.id}/audit', extra: report),
       ),
+      if (!demoEnabled && report.evidence.isNotEmpty)
+        ActionButton(
+          'Your evidence (${report.evidence.length})',
+          () => context.push('/case/${report.id}/evidence', extra: report),
+        ),
     ],
   );
 }

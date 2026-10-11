@@ -5,7 +5,7 @@ import secrets
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from app.chain.hashing import content_sha256
@@ -286,6 +286,16 @@ def build_api_router() -> APIRouter:
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})
             store.save()
         return {"evidence_id": ev.evidence_id, "name": ev.name, "mime": ev.mime, "size": ev.size, "sha256": sha}
+
+    @r.get("/reports/{case_id}/evidence/{evidence_id}")
+    def evidence_file(evidence_id: str, case: Case = Depends(case_access)):
+        """The reporter's own file, as stored (the cleaned copy staff see). Only this case's token opens it."""
+        ev = next((e for e in case.evidence if e.evidence_id == evidence_id), None)
+        if ev is None:
+            raise HTTPException(404, {"reason": "evidence_not_found"})
+        return Response(base64.b64decode(ev.content_b64), media_type=ev.mime,
+                        headers={"X-Content-SHA256": ev.sha256, "Cache-Control": "no-store",
+                                 "Content-Disposition": "inline"})
 
     @r.post("/reports/{case_id}/challenge", status_code=201)
     def challenge(request: Request, body: ChallengeIn, case: Case = Depends(case_access)):

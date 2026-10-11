@@ -69,3 +69,19 @@ def test_type_mismatch_and_reuse_across_cases(client, case):
     upload(client, other["case_id"], other["case_token"], "b.jpg", raw, "image/jpeg")
     codes = {f["code"] for f in staff_evidence(client, other["case_id"])[-1]["integrityFlags"]}
     assert codes == {"reused_file"}
+
+
+def test_reporter_downloads_only_their_own_cleaned_file(client, case):
+    case_id, token = case
+    raw = photo("2026:10:08 10:00:00")
+    up = upload(client, case_id, token, "desk.jpg", raw, "image/jpeg")
+    r = client.get(f"/reports/{case_id}/evidence/{up['evidence_id']}", headers=auth(token))
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert r.headers["x-content-sha256"] == up["sha256"] and b"SM-A356E" not in r.content
+    assert r.headers["cache-control"] == "no-store"
+
+    other = submit(client).json()
+    assert client.get(f"/reports/{case_id}/evidence/{up['evidence_id']}",
+                      headers=auth(other["case_token"])).status_code == 404  # another case's token
+    assert client.get(f"/reports/{case_id}/evidence/{up['evidence_id']}").status_code == 401
+    assert client.get(f"/reports/{case_id}/evidence/EVD-NOPE", headers=auth(token)).status_code == 404

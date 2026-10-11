@@ -74,6 +74,15 @@ class IncognitoApi {
       options: _bearer(token),
     ),
   );
+  Future<List<int>> evidenceFile(String caseId, String token, String evidenceId) => _call(
+    () => _dio.get(
+      '/reports/${Uri.encodeComponent(caseId)}/evidence/${Uri.encodeComponent(evidenceId)}',
+      options: Options(
+        headers: {'Authorization': 'Bearer $token'},
+        responseType: ResponseType.bytes,
+      ),
+    ),
+  );
   Future<Json> uploadEvidence(
     String caseId,
     String token,
