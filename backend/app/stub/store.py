@@ -161,18 +161,22 @@ class StubStore:
         self._extensions: dict[str, tuple] = {}
         self._pending_ext: dict[str, str] = {}
         self.supabase = supabase
+        # Fault isolation. problems: records/tables that could not be loaded (each disables only itself).
+        # persistence_down: the database cannot take writes; every write is refused with 503 while reads, enrolment
+        # and proofs keep working.
+        self.persistence_problems: list[str] = []
+        self.persistence_down: str | None = None
 
-        # Load from disk if state file exists
+        # Supabase, when configured, is the source of truth for cases: the state file then keeps only extension
+        # state (e.g. the offline chain's nullifiers), and demo data is never seeded into a real database.
         if self._path and self._path.exists():
-            self._load()
+            self._load(cases=self.supabase is None)
 
-        # Load canonical records from Supabase if connected
         if self.supabase:
-            self._load_from_supabase()
-
-        if not self.cases and seed_demo:
+            self._load_from_supabase()  # raises PersistenceError: never start on silently missing data
+        elif not self.cases and seed_demo:
             self._seed()
-            if self._path or self.supabase:
+            if self._path:
                 self.save()
 
     @property
@@ -290,19 +294,14 @@ class StubStore:
         }
 
     def save(self) -> None:
+        """Mirror to the encrypted state file. Supabase writes are explicit, per operation (app.stub.persist)."""
         with self._lock:
-            if self.supabase:
-                try:
-                    self._sync_all_to_supabase()
-                except Exception as e:
-                    logger.error("Failed to sync store to Supabase: %s", e)
-
             if not self._path:
                 return
-
+            with_cases = self.supabase is None
             data = {
-                "cases": [self._seal(asdict(c)) for c in self.cases.values()],
-                "invitations": [asdict(i) for i in self.invitations.values()],
+                "cases": [self._seal(asdict(c)) for c in self.cases.values()] if with_cases else [],
+                "invitations": [asdict(i) for i in self.invitations.values()] if with_cases else [],
             }
             if self._crypto and self._extensions:
                 data["extensions"] = {
@@ -313,8 +312,11 @@ class StubStore:
             tmp.write_text(json.dumps(data))
             os.replace(tmp, self._path)
 
-    def _load(self) -> None:
+    def _load(self, cases: bool = True) -> None:
         data = json.loads(self._path.read_text())
+        self._pending_ext = dict(data.get("extensions", {}))
+        if not cases:
+            return
         for c in data.get("cases", []):
             c = self._open(c)
             c["evidence"] = [Evidence(**e) for e in c["evidence"]]
@@ -326,125 +328,53 @@ class StubStore:
         self._pending_ext = dict(data.get("extensions", {}))
 
     def _load_from_supabase(self) -> None:
-        if not self.supabase:
-            return
         try:
-            reports = self.supabase.list_reports()
-            for r in reports:
-                cid = r["case_id"]
-                ev_list = []
-                for e in self.supabase.list_evidence(cid):
-                    ev_list.append(Evidence(
-                        evidence_id=e.get("id", ""),
-                        name=e.get("name", ""),
-                        mime=e.get("mime", ""),
-                        size=e.get("size", 0),
-                        sha256=e.get("sha256", ""),
-                        content_b64="",
-                    ))
-                ch_list = []
-                for ch in self.supabase.list_challenges(cid):
-                    ch_list.append(ChallengeRec(
-                        challenge_id=ch.get("id", ""),
-                        member_id=ch.get("member_id", ""),
-                        reason=ch.get("reason", ""),
-                        explanation=ch.get("explanation", ""),
-                        status=ch.get("status", "pending_review"),
-                        proof_tx=ch.get("proof_tx", ""),
-                        decided_at=ch.get("decided_at"),
-                        reviewer_id=ch.get("reviewer_id"),
-                        rationale=ch.get("rationale"),
-                    ))
-                msg_list = []
-                for m in self.supabase.list_messages(cid):
-                    msg_list.append(Message(
-                        message_id=m.get("message_id", ""),
-                        sender=m.get("sender", "investigator"),
-                        text=m.get("text", ""),
-                        at=m.get("at", now()),
-                    ))
-
-                self.cases[cid] = Case(
-                    case_id=cid,
-                    token_hash=r.get("token_hash", ""),
-                    raw_payload=json.dumps(r.get("payload", {})),
-                    status=r.get("status", "submitted"),
-                    created_at=r.get("created_at", now()),
-                    investigator_id=r.get("investigator_id", DEFAULT_INVESTIGATOR),
-                    committee=[committee_entry(m["member_id"] if isinstance(m, dict) else m) for m in r.get("committee", [])],
-                    revoked_ids=list(r.get("revoked_ids", [])),
-                    nullifier=r.get("nullifier", ""),
-                    proof_tx=r.get("proof_tx", ""),
-                    severity=r.get("severity") or {},
-                    integrity_flags=list(r.get("integrity_flags", [])),
-                    resolution=r.get("resolution"),
-                    reflection=r.get("reflection"),
-                    evidence=ev_list,
-                    challenges=ch_list,
-                    messages=msg_list,
-                )
-
-            for inv in self.supabase.list_witness_invitations():
-                self.invitations[inv["id"]] = Invitation(
-                    invitation_id=inv["id"],
-                    case_id=inv["case_id"],
-                    code_hash=inv.get("code", ""),
-                    context=inv.get("role_alias", "Voluntary workplace investigation interview invitation."),
-                    response="accept" if inv.get("status") == "accepted" else ("decline" if inv.get("status") == "declined" else None),
-                    alias=inv.get("role_alias", ""),
-                    invited_at=inv.get("created_at", now()),
-                    responded_at=inv.get("responded_at"),
-                )
-        except Exception as e:
-            logger.error("Failed to load records from Supabase: %s", e)
-
-    def _sync_all_to_supabase(self) -> None:
-        if not self.supabase:
+            state = self.supabase.load()
+        except Exception:
+            self.persistence_down = "database unreachable at startup"
             return
-        for c in self.cases.values():
+        self.persistence_problems = list(state.problems)
+        if state.down:
+            self.persistence_down = "database unreachable at startup"
+        bad = 0
+        for r in state.reports:
             try:
-                existing = self.supabase.get_report(c.case_id)
-                if not existing:
-                    self.supabase.insert_report({
-                        "case_id": c.case_id,
-                        "token_hash": c.token_hash,
-                        "payload": c.payload,
-                        "status": c.status,
-                        "created_at": c.created_at,
-                        "investigator_id": c.investigator_id,
-                        "committee": c.committee,
-                        "revoked_ids": c.revoked_ids,
-                        "severity": c.severity,
-                        "integrity_flags": c.integrity_flags,
-                        "nullifier": c.nullifier,
-                        "proof_tx": c.proof_tx,
-                        "resolution": c.resolution,
-                        "reflection": c.reflection,
-                    })
-                else:
-                    self.supabase.update_report(c.case_id, {
-                        "status": c.status,
-                        "committee": c.committee,
-                        "revoked_ids": c.revoked_ids,
-                        "severity": c.severity,
-                        "resolution": c.resolution,
-                        "reflection": c.reflection,
-                    })
-            except Exception as e:
-                logger.error("Error syncing case %s to Supabase: %s", c.case_id, e)
+                self._case_from_row(r, state)
+            except Exception:
+                bad += 1
+        if bad:
+            self.persistence_problems.append(f"reports: {bad} could not be rebuilt and were skipped")
+        for inv in state.invitations:
+            try:
+                self.invitations[inv["invitation_id"]] = Invitation(**inv)
+            except Exception:
+                self.persistence_problems.append("witness_invitations: a record could not be rebuilt")
 
-        for i in self.invitations.values():
-            try:
-                existing_inv = self.supabase.get_witness_invitation_by_code(i.code_hash)
-                if not existing_inv:
-                    self.supabase.insert_witness_invitation(
-                        invitation_id=i.invitation_id,
-                        case_id=i.case_id,
-                        code=i.code_hash,
-                        role_alias=i.alias,
-                    )
-            except Exception as e:
-                logger.error("Error syncing invitation %s to Supabase: %s", i.invitation_id, e)
+    def _case_from_row(self, r: dict, state) -> None:
+        cid = r["case_id"]
+        names = r.get("evidence_names") or {}
+        self.cases[cid] = Case(
+            case_id=cid, token_hash=r["token_hash"], raw_payload=r["raw_payload"], status=r["status"],
+            created_at=r["created_at"], committee=[committee_entry(m) for m in r["committee"] if m in STAFF],
+            investigator_id=r["investigator_id"], revoked_ids=list(r["revoked_ids"]),
+            nullifier=r["nullifier"], proof_tx=r["proof_tx"], severity=r["severity"] or {},
+            integrity_flags=list(r["integrity_flags"]), subject_ref=r["subject_ref"],
+            fingerprint=r["fingerprint"], resolution=r["resolution"], reflection=r["reflection"],
+            # File content stays in private storage until needed (verification, viewing).
+            evidence=[Evidence(e["evidence_id"], names.get(e["evidence_id"], e["evidence_id"]), e["mime"],
+                               e["size"], e["sha256"], "") for e in state.evidence.get(cid, [])],
+            challenges=[ChallengeRec(**ch) for ch in state.challenges.get(cid, [])],
+            messages=[Message(m["message_id"], m["sender"], m["text"], m["at"])
+                      for m in state.messages.get(cid, [])],
+        )
+
+    def evidence_content(self, case_id: str, ev: "Evidence") -> bytes:
+        """The stored (cleaned) evidence bytes: in memory, or fetched from private storage and decrypted."""
+        if ev.content_b64:
+            return base64.b64decode(ev.content_b64)
+        if self.supabase:
+            return self.supabase.evidence_content(case_id, ev.evidence_id)
+        return b""
 
     # Sensitive fields are encrypted in the state file and plaintext only in memory.
     def _enc(self, value: str, case_id: str, name: str) -> str:
@@ -492,7 +422,12 @@ class StubStore:
     def evidence_bytes(self, case_id: str, data: dict) -> bytes | None:
         case = self.cases.get(case_id)
         ev = next((e for e in case.evidence if e.evidence_id == data.get("evidence_id")), None) if case else None
-        return base64.b64decode(ev.content_b64) if ev else None
+        if ev is None:
+            return None
+        try:
+            return self.evidence_content(case_id, ev)
+        except Exception:
+            return None  # unreadable storage shows as a verification failure, never as a pass
 
     def message_bytes(self, case_id: str, data: dict) -> bytes | None:
         case = self.cases.get(case_id)

@@ -1,499 +1,407 @@
-"""Supabase Persistence Repository.
+"""Supabase persistence for the integrated workflow, mapped onto the verified canonical schema.
 
-Implements canonical database persistence for reports, evidence items,
-committee challenges, witness invitations, investigation messaging, and
-audit records via the server-side Supabase client.
+Canonical tables (verified in the project; see migrations/0050_supabase_persistence.sql):
+  reports(id uuid, public_reference, category, summary_ciphertext, description_ciphertext, severity, status, ...)
+  evidence_items(id, report_id, storage_object_path, sha256_hex, mime_type, size_bytes, created_at)
+  committee_challenges(id, report_id, committee_member_ref, reason_ciphertext, status, decision_note_ciphertext, ...)
+  witness_invitations(id, report_id, invitation_token_hash, witness_contact_ciphertext, status, invited_at, ...)
+  investigation_messages(id, report_id, sender_role, body_ciphertext, created_at)
+  audit_events(...)            -> app/core/supabase_audit.py
+  incident_correlations(id, report_id_a, report_id_b, similarity_score, rationale_ciphertext, review_status, ...)
+Workflow state the canonical schema has no column for (reporter token hash, committee, lifecycle stage, nullifiers,
+resolution, feedback, evidence names, the exact submitted payload) lives in the proposed report_workflow table
+(migrations/0051_report_workflow.sql). Until that migration is applied, saving a report fails loudly.
+
+Rules:
+- Every free-text field is encrypted (AES-256-GCM, bound to its record and field) before it leaves the process.
+- Every write either succeeds or raises PersistenceError. Nothing is swallowed, nothing reports success unsaved.
+- Row ids are deterministic UUIDs derived from the application ids (INC-…, EVD-…), so retries are idempotent and
+  no lookup is needed to address a row.
+- This class performs no authorization: the server key bypasses RLS, so callers must authorize first.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import logging
 import os
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
-from supabase import Client, create_client
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from app.core.config import Settings, get_settings
-from app.utils.encryption import encrypt, decrypt, get_encryption_key, EncryptionError
+from app.services.encryption_service import EncryptedField, EncryptionService
 
 logger = logging.getLogger("incognito.persistence")
 
+EVIDENCE_BUCKET = "incognito-evidence"
+# Bucket limits (verified): 10 MB per object, these MIME types only. The stored object is the encrypted file, so the
+# plaintext limit leaves room for the 12-byte nonce and 16-byte tag.
+STORAGE_MAX_BYTES = 10 * 1024 * 1024
+EVIDENCE_MAX_PLAINTEXT = STORAGE_MAX_BYTES - 28
+STORAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "application/pdf", "text/plain"})
 
-class IntegrationUnavailable(RuntimeError):
-    pass
+_NS = uuid.UUID("4c1b0e64-2f53-4b8e-9d3a-6a2f0c7e5b91")  # fixed namespace for INCOGNITO row ids
+
+# reports.status allows: submitted, triage, under_review, awaiting_info, resolved, closed. The workflow's finer
+# lifecycle stage is kept in report_workflow.lifecycle_stage.
+REPORT_STATUS = {"submitted": "submitted", "committee_assigned": "triage", "under_challenge": "under_review",
+                 "investigating": "under_review", "witness_quorum_active": "under_review",
+                 "resolved": "resolved", "closed": "closed"}
+SEVERITIES = ("low", "medium", "high", "critical")
+CHALLENGE_STATUS = {"pending_review": "pending", "rejected": "rejected"}  # upheld -> accepted | reassigned
+WITNESS_STATUS = {None: "invited", "accept": "accepted", "decline": "declined"}
+SENDER_ROLE = {"you": "reporter", "investigator": "investigator", "system": "system"}
+SENDER_FROM_ROLE = {v: k for k, v in SENDER_ROLE.items()}
+
+
+class PersistenceError(RuntimeError):
+    """A database or storage operation did not complete. The message is safe to log (no content, no keys)."""
+
+
+def row_id(kind: str, app_id: str) -> str:
+    return str(uuid.uuid5(_NS, f"{kind}:{app_id}"))
+
+
+def report_row_id(case_id: str) -> str:
+    return row_id("report", case_id)
+
+
+def report_status(stage: str) -> str:
+    try:
+        return REPORT_STATUS[stage]
+    except KeyError:
+        raise PersistenceError(f"no reports.status mapping for lifecycle stage {stage!r}") from None
+
+
+def severity_value(severity: dict | None) -> str:
+    level = (severity or {}).get("level")
+    return level if level in SEVERITIES else "medium"  # the engines' "review" level means unassessed: medium
+
+
+def challenge_status(status: str, replaced: bool) -> str:
+    if status == "upheld":
+        return "reassigned" if replaced else "accepted"
+    return CHALLENGE_STATUS[status]
+
+
+def challenge_status_from_row(status: str) -> str:
+    return {"pending": "pending_review", "rejected": "rejected", "accepted": "upheld", "reassigned": "upheld"}[status]
+
+
+def ordered_pair(a: str, b: str) -> tuple[str, str]:
+    """incident_correlations has UNIQUE(report_id_a, report_id_b): always store the smaller uuid first."""
+    return (a, b) if a < b else (b, a)
+
+
+@dataclass
+class LoadedState:
+    """Everything read back at startup, already decrypted, keyed by application ids."""
+    reports: list[dict] = field(default_factory=list)
+    evidence: dict[str, list[dict]] = field(default_factory=dict)      # case_id -> rows
+    challenges: dict[str, list[dict]] = field(default_factory=dict)
+    messages: dict[str, list[dict]] = field(default_factory=dict)
+    invitations: list[dict] = field(default_factory=list)
+    # Fault isolation: a table that cannot be read or a row that cannot be decrypted is skipped and named here, so
+    # one bad record disables only itself. `down` means the reports table itself was unreachable.
+    problems: list[str] = field(default_factory=list)
+    down: bool = False
 
 
 class SupabaseRepository:
-    """Canonical repository interfacing with PostgreSQL/Supabase tables."""
-
-    def __init__(self, client: Client, encryption_key: bytes | None = None, storage_bucket: str | None = None):
+    def __init__(self, client: Any, encryption_key: bytes, bucket: str = EVIDENCE_BUCKET):
+        if not encryption_key or len(encryption_key) != 32:
+            raise PersistenceError("Supabase persistence requires a 32-byte ENCRYPTION_KEY; refusing to store "
+                                   "report content unencrypted")
         self.client = client
-        self._key = encryption_key or get_encryption_key()
-        self.storage_bucket = storage_bucket or os.getenv("SUPABASE_STORAGE_BUCKET", "incognito-evidence")
+        self.bucket = bucket
+        self._crypto = EncryptionService(encryption_key)
+        self._aead = AESGCM(encryption_key)
 
     @classmethod
-    def from_settings(cls, settings: Settings | None = None) -> SupabaseRepository:
-        settings = settings or get_settings()
-        if not settings.supabase_url or not settings.supabase_secret_key:
-            raise IntegrationUnavailable("Supabase service credentials (SUPABASE_URL and SUPABASE_SECRET_KEY) are not configured")
-        
+    def from_env(cls, url: str, secret_key: str, encryption_key: bytes) -> "SupabaseRepository":
+        from supabase import create_client  # imported lazily: the server key never leaves this process
+        bucket = os.getenv("SUPABASE_STORAGE_BUCKET", EVIDENCE_BUCKET)
+        return cls(create_client(url, secret_key), encryption_key, bucket)
+
+    # ---- plumbing -------------------------------------------------------------------------------------------------
+
+    def _run(self, query, what: str) -> list[dict]:
         try:
-            client = create_client(settings.supabase_url, settings.supabase_secret_key)
-            key = None
-            try:
-                key = get_encryption_key()
-            except Exception as e:
-                logger.warning("Encryption key not configured for Supabase repository: %s", e)
-            bucket = getattr(settings, "supabase_storage_bucket", "incognito-evidence")
-            return cls(client, key, bucket)
+            res = query.execute()
         except Exception as exc:
-            raise IntegrationUnavailable(f"Failed to connect to Supabase: {exc}") from exc
+            logger.error("Supabase %s failed: %s", what, type(exc).__name__)
+            raise PersistenceError(f"{what} failed") from exc
+        return list(getattr(res, "data", None) or [])
 
-    # ---- Field Encryption Helpers -------------------------------------------------------------
+    def _enc(self, value: str, record: str, record_id: str, name: str) -> str:
+        return self._crypto.encrypt_field(value, record, record_id, name).ciphertext
 
-    def _encrypt(self, plaintext: str, record_type: str, record_id: str, field_name: str) -> tuple[str, str]:
-        """Encrypt plaintext returning (ciphertext, aad_string)."""
-        if not self._key:
-            raise EncryptionError("Cannot encrypt field: ENCRYPTION_KEY is missing")
-        aad_bytes = f"{record_type}:{record_id}:{field_name}".encode("utf-8")
-        ciphertext = encrypt(plaintext.encode("utf-8"), self._key, aad_bytes)
-        return ciphertext, aad_bytes.decode("utf-8")
+    def _dec(self, value: str, record: str, record_id: str, name: str) -> str:
+        return self._crypto.decrypt_field(EncryptedField(value, f"{record}:{record_id}:{name}"), record, record_id,
+                                          name)
 
-    def _decrypt(self, ciphertext: str, record_type: str, record_id: str, field_name: str, aad_str: str | None = None) -> str:
-        """Decrypt ciphertext verifying associated data."""
-        if not self._key:
-            raise EncryptionError("Cannot decrypt field: ENCRYPTION_KEY is missing")
-        aad_bytes = (aad_str or f"{record_type}:{record_id}:{field_name}").encode("utf-8")
-        decrypted_bytes = decrypt(ciphertext, self._key, aad_bytes)
-        return decrypted_bytes.decode("utf-8")
+    def _enc_json(self, value: Any, record: str, record_id: str, name: str) -> str:
+        return self._enc(json.dumps(value, separators=(",", ":")), record, record_id, name)
 
-    # ---- Reports Operations -------------------------------------------------------------------
+    def _dec_json(self, value: str, record: str, record_id: str, name: str) -> Any:
+        return json.loads(self._dec(value, record, record_id, name))
 
-    def insert_report(self, report_dict: dict[str, Any]) -> dict[str, Any]:
-        """Save a new report into Supabase with encrypted title and narrative."""
-        case_id = report_dict["case_id"]
-        title_plain = report_dict.get("title") or report_dict.get("payload", {}).get("title", "")
-        desc_plain = report_dict.get("description") or report_dict.get("payload", {}).get("description", "")
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-        enc_title, title_aad = self._encrypt(title_plain, "report", case_id, "title")
-        enc_desc, desc_aad = self._encrypt(desc_plain, "report", case_id, "narrative")
+    # ---- reports + workflow ---------------------------------------------------------------------------------------
 
-        row = {
-            "case_id": case_id,
-            "public_reference": case_id,
-            "token_hash": report_dict.get("token_hash", ""),
-            "category": report_dict.get("category") or report_dict.get("payload", {}).get("category", "Other"),
-            "categories": report_dict.get("categories") or report_dict.get("payload", {}).get("categories", []),
-            "encrypted_title": enc_title,
-            "summary_ciphertext": enc_title,
-            "encrypted_narrative": enc_desc,
-            "description_ciphertext": enc_desc,
-            "title_aad": title_aad,
-            "narrative_aad": desc_aad,
-            "incident_date": str(report_dict.get("incident_date") or report_dict.get("payload", {}).get("incident_date") or ""),
-            "client_nonce": report_dict.get("client_nonce") or report_dict.get("payload", {}).get("client_nonce", ""),
-            "subject_ref": report_dict.get("subject_ref") or report_dict.get("payload", {}).get("subject_ref"),
-            "accused_person": report_dict.get("subject_ref") or report_dict.get("payload", {}).get("subject_ref"),
-            "status": report_dict.get("status", "submitted"),
-            "severity": report_dict.get("severity", {}),
-            "integrity_flags": list(report_dict.get("integrity_flags", [])),
-            "nullifier": report_dict.get("nullifier", ""),
-            "proof_tx": report_dict.get("proof_tx", ""),
-            "investigator_id": report_dict.get("investigator_id", "usr_sarah"),
-            "committee": report_dict.get("committee", []),
-            "committee_assignments": report_dict.get("committee", []),
-            "revoked_ids": list(report_dict.get("revoked_ids", [])),
-            "resolution": report_dict.get("resolution"),
-            "outcome": report_dict.get("resolution"),
-            "reflection": report_dict.get("reflection"),
-            "feedback": report_dict.get("reflection"),
-            "created_at": report_dict.get("created_at") or datetime.now(timezone.utc).isoformat(),
+    def save_report(self, case) -> None:
+        """Upsert the canonical report row and its workflow row. `case` is app.stub.store.Case."""
+        rid = report_row_id(case.case_id)
+        payload = case.payload
+        self._run(self.client.table("reports").upsert({
+            "id": rid,
+            "public_reference": case.case_id,
+            "category": payload.get("category") or "Other",
+            "summary_ciphertext": self._enc(payload.get("title") or "", "report", rid, "summary"),
+            "description_ciphertext": self._enc(payload.get("description") or "", "report", rid, "description"),
+            "severity": severity_value(case.severity),
+            "status": report_status(case.status),
+            "updated_at": self._now(),
+        }, on_conflict="id"), f"save report {case.case_id}")
+        state = {
+            # The exact submitted payload: the Silent Audit sealed its hash, so it must round-trip byte for byte.
+            "raw_payload": case.raw_payload,
+            "created_at": case.created_at,
+            "committee": [m["member_id"] for m in case.committee],
+            "investigator_id": case.investigator_id,
+            "revoked_ids": list(case.revoked_ids),
+            "nullifier": case.nullifier,
+            "proof_tx": case.proof_tx,
+            "severity": case.severity,
+            "integrity_flags": list(case.integrity_flags),
+            "subject_ref": case.subject_ref,
+            "fingerprint": case.fingerprint,
+            "resolution": case.resolution,
+            "reflection": case.reflection,
+            "evidence_names": {e.evidence_id: e.name for e in case.evidence},
         }
-        # Clean null dates
-        if not row["incident_date"]:
-            row["incident_date"] = None
+        self._run(self.client.table("report_workflow").upsert({
+            "report_id": rid,
+            "lifecycle_stage": case.status,
+            "token_hash": case.token_hash,
+            "state_ciphertext": self._enc_json(state, "workflow", rid, "state"),
+            "updated_at": self._now(),
+        }, on_conflict="report_id"), f"save workflow for {case.case_id}")
 
-        res = self.client.table("reports").insert(row).execute()
-        if not res.data:
-            raise IntegrationUnavailable(f"Failed to persist report {case_id} to Supabase")
-        return self._format_report(res.data[0])
+    # ---- evidence ------------------------------------------------------------------------------------------------
 
-    def get_report(self, case_id: str) -> dict[str, Any] | None:
-        """Fetch a report by case_id or public_reference and decrypt sensitive fields."""
-        res = self.client.table("reports").select("*").eq("case_id", case_id).execute()
-        if not res.data:
-            res = self.client.table("reports").select("*").eq("public_reference", case_id).execute()
-        if not res.data:
-            return None
-        return self._format_report(res.data[0])
-
-    def list_reports(self) -> list[dict[str, Any]]:
-        """Fetch all reports from Supabase."""
-        res = self.client.table("reports").select("*").order("created_at", desc=True).execute()
-        return [self._format_report(row) for row in (res.data or [])]
-
-    def update_report(self, case_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-        """Update fields of an existing report supporting schema aliases."""
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if "resolution" in updates and "outcome" not in updates:
-            updates["outcome"] = updates["resolution"]
-        if "reflection" in updates and "feedback" not in updates:
-            updates["feedback"] = updates["reflection"]
-        if "committee" in updates and "committee_assignments" not in updates:
-            updates["committee_assignments"] = updates["committee"]
-
-        res = self.client.table("reports").update(updates).eq("case_id", case_id).execute()
-        if not res.data:
-            res = self.client.table("reports").update(updates).eq("public_reference", case_id).execute()
-        if not res.data:
-            raise IntegrationUnavailable(f"Failed to update report {case_id} in Supabase")
-        return self._format_report(res.data[0])
-
-    def _format_report(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Transform raw DB row into domain Case dict with decrypted strings and alias support."""
-        case_id = row.get("case_id") or row.get("public_reference", "")
-        enc_title = row.get("encrypted_title") or row.get("summary_ciphertext")
-        enc_desc = row.get("encrypted_narrative") or row.get("description_ciphertext")
-        title = ""
-        description = ""
+    def save_evidence(self, case_id: str, evidence_id: str, mime: str, size: int, sha256_hex: str,
+                      content: bytes) -> str:
+        """Encrypt and upload the stored copy, then record its metadata. Returns the storage path."""
+        if mime not in STORAGE_MIME_TYPES:
+            raise PersistenceError(f"evidence type {mime} is not accepted by the evidence bucket")
+        if len(content) > EVIDENCE_MAX_PLAINTEXT:
+            raise PersistenceError("evidence exceeds the evidence bucket's size limit")
+        rid = report_row_id(case_id)
+        path = f"reports/{rid}/{evidence_id}"
+        nonce = os.urandom(12)
+        blob = nonce + self._aead.encrypt(nonce, content, f"evidence:{rid}:{evidence_id}".encode())
         try:
-            if enc_title:
-                title = self._decrypt(enc_title, "report", case_id, "title", row.get("title_aad"))
-            if enc_desc:
-                description = self._decrypt(enc_desc, "report", case_id, "narrative", row.get("narrative_aad"))
-        except Exception as e:
-            logger.error("Failed to decrypt report %s: %s", case_id, e)
-            title = "[Decryption Failed]"
-            description = "[Decryption Failed]"
+            self.client.storage.from_(self.bucket).upload(
+                path=path, file=blob, file_options={"content-type": mime, "upsert": "false"})
+        except Exception as exc:
+            logger.error("Evidence upload failed: %s", type(exc).__name__)
+            raise PersistenceError(f"upload evidence {evidence_id} failed") from exc
+        self._run(self.client.table("evidence_items").insert({
+            "id": row_id("evidence", evidence_id), "report_id": rid, "storage_object_path": path,
+            "sha256_hex": sha256_hex, "mime_type": mime, "size_bytes": size, "created_at": self._now(),
+        }), f"record evidence {evidence_id}")
+        return path
 
-        resolution = row.get("resolution") or row.get("outcome")
-        reflection = row.get("reflection") or row.get("feedback")
-        committee = row.get("committee") or row.get("committee_assignments") or []
-        subject_ref = row.get("subject_ref") or row.get("accused_person")
+    def evidence_content(self, case_id: str, evidence_id: str) -> bytes:
+        rid = report_row_id(case_id)
+        path = f"reports/{rid}/{evidence_id}"
+        try:
+            blob = self.client.storage.from_(self.bucket).download(path)
+        except Exception as exc:
+            raise PersistenceError(f"download evidence {evidence_id} failed") from exc
+        return self._aead.decrypt(blob[:12], blob[12:], f"evidence:{rid}:{evidence_id}".encode())
 
-        return {
-            "case_id": case_id,
-            "token_hash": row.get("token_hash", ""),
-            "status": row.get("status", "submitted"),
-            "created_at": str(row.get("created_at", "")),
-            "investigator_id": row.get("investigator_id", "usr_sarah"),
-            "committee": committee,
-            "revoked_ids": row.get("revoked_ids") or [],
-            "nullifier": row.get("nullifier", ""),
-            "proof_tx": row.get("proof_tx", ""),
-            "severity": row.get("severity") or {},
-            "integrity_flags": row.get("integrity_flags") or [],
-            "resolution": resolution,
-            "reflection": reflection,
-            "payload": {
-                "title": title,
-                "description": description,
-                "category": row.get("category", "Other"),
-                "categories": row.get("categories") or [],
-                "incident_date": row.get("incident_date"),
-                "client_nonce": row.get("client_nonce", ""),
-                "subject_ref": subject_ref,
-            },
+    # ---- committee challenges ------------------------------------------------------------------------------------
+
+    def save_challenge(self, case_id: str, ch, replaced: bool = False) -> None:
+        """Insert or update one challenge (`ch` is app.stub.store.ChallengeRec)."""
+        cid = row_id("challenge", ch.challenge_id)
+        row = {
+            "id": cid,
+            "report_id": report_row_id(case_id),
+            "committee_member_ref": ch.member_id,
+            "reason_ciphertext": self._enc_json({"challenge_id": ch.challenge_id, "reason": ch.reason,
+                                                 "explanation": ch.explanation, "proof_tx": ch.proof_tx,
+                                                 "submitted_at": ch.at}, "challenge", cid, "reason"),
+            "status": challenge_status(ch.status, replaced),
+            "decision_note_ciphertext": (self._enc_json({"rationale": ch.rationale, "reviewer_id": ch.reviewer_id},
+                                                        "challenge", cid, "decision")
+                                         if ch.status != "pending_review" else None),
+            "decided_at": ch.decided_at,
         }
+        self._run(self.client.table("committee_challenges").upsert(row, on_conflict="id"),
+                  f"save challenge {ch.challenge_id}")
 
-    # ---- Evidence Operations ------------------------------------------------------------------
+    # ---- witness invitations -------------------------------------------------------------------------------------
 
-    def insert_evidence(
-        self,
-        case_id: str,
-        evidence_id: str,
-        name: str,
-        mime: str,
-        size: int,
-        sha256: str,
-        file_bytes: bytes | None = None,
-        bucket: str | None = None,
-    ) -> dict[str, Any]:
-        """Store evidence metadata and upload file to private Supabase Storage bucket."""
-        storage_path = f"cases/{case_id}/{evidence_id}"
-        bucket_name = bucket or self.storage_bucket
+    def save_invitation(self, inv) -> None:
+        """Insert or update one invitation (`inv` is app.stub.store.Invitation). Only the code's hash is stored."""
+        wid = row_id("witness", inv.invitation_id)
+        self._run(self.client.table("witness_invitations").upsert({
+            "id": wid,
+            "report_id": report_row_id(inv.case_id),
+            "invitation_token_hash": inv.code_hash,
+            "witness_contact_ciphertext": self._enc_json({"invitation_id": inv.invitation_id, "alias": inv.alias,
+                                                          "context": inv.context}, "witness", wid, "contact"),
+            "status": WITNESS_STATUS[inv.response],
+            "invited_at": inv.invited_at or self._now(),
+            "responded_at": inv.responded_at,
+        }, on_conflict="id"), f"save invitation {inv.invitation_id}")
 
-        # Upload file to private Supabase Storage if data is provided
-        if file_bytes is not None:
+    # ---- investigation messages ----------------------------------------------------------------------------------
+
+    def insert_message(self, case_id: str, msg) -> None:
+        """`msg` is app.stub.store.Message; its application id travels inside the encrypted body."""
+        mid = row_id("message", msg.message_id)
+        self._run(self.client.table("investigation_messages").insert({
+            "id": mid,
+            "report_id": report_row_id(case_id),
+            "sender_role": SENDER_ROLE[msg.sender],
+            "body_ciphertext": self._enc_json({"message_id": msg.message_id, "text": msg.text}, "message", mid,
+                                              "body"),
+            "created_at": msg.at,
+        }), f"save message {msg.message_id}")
+
+    # ---- incident correlations (advisory only) -------------------------------------------------------------------
+
+    def save_correlation(self, case_a: str, case_b: str, score: float, method: str) -> None:
+        """Record a possible link for human review. Never merges, never rejects; review starts as pending."""
+        a, b = ordered_pair(report_row_id(case_a), report_row_id(case_b))
+        if a == b:
+            raise PersistenceError("a report cannot be correlated with itself")
+        pair_id = row_id("correlation", f"{a}:{b}")
+        self._run(self.client.table("incident_correlations").upsert({
+            "id": pair_id, "report_id_a": a, "report_id_b": b, "similarity_score": round(float(score), 4),
+            "rationale_ciphertext": self._enc_json({"method": method}, "correlation", pair_id, "rationale"),
+            "review_status": "pending",
+        }, on_conflict="report_id_a,report_id_b"), "save correlation")
+
+    # ---- load everything (startup) -------------------------------------------------------------------------------
+
+    def load(self) -> LoadedState:
+        """Read and decrypt all workflow records. Never raises for a bad table or row: it skips it and records the
+        problem, so the rest still loads. Only an unreachable reports table marks the store down."""
+        out = LoadedState()
+
+        def rows(table: str, cols: str, ordered: bool = False) -> list[dict]:
+            q = self.client.table(table).select(cols)
             try:
-                self.client.storage.from_(bucket_name).upload(
-                    path=storage_path,
-                    file=file_bytes,
-                    file_options={"content-type": mime, "upsert": "true"},
-                )
-            except Exception as e:
-                logger.warning("Storage bucket upload skipped or failed for %s: %s", storage_path, e)
+                return self._run(q.order("created_at") if ordered else q, f"load {table}")
+            except PersistenceError:
+                out.problems.append(f"{table}: could not be read")
+                return []
 
-        row = {
-            "id": evidence_id,
-            "case_id": case_id,
-            "report_reference": case_id,
-            "name": name,
-            "mime": mime,
-            "mime_type": mime,
-            "size": size,
-            "file_size": size,
-            "sha256": sha256,
-            "sha256_hash": sha256,
-            "storage_path": storage_path,
-            "storage_object_path": storage_path,
-            "bucket": bucket_name,
-            "verification_status": "verified",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        res = self.client.table("evidence_items").insert(row).execute()
-        return row
+        def each(table: str, items: list[dict], fn) -> None:
+            bad = 0
+            for item in items:
+                try:
+                    fn(item)
+                except Exception:  # undecryptable or malformed: this record only
+                    bad += 1
+            if bad:
+                out.problems.append(f"{table}: {bad} record(s) unreadable and skipped")
 
-    def list_evidence(self, case_id: str) -> list[dict[str, Any]]:
-        """Fetch evidence items attached to a case."""
-        res = self.client.table("evidence_items").select("*").eq("case_id", case_id).execute()
-        if not res.data:
-            res = self.client.table("evidence_items").select("*").eq("report_reference", case_id).execute()
-        return res.data or []
+        try:
+            reports = self._run(self.client.table("reports").select(
+                "id,public_reference,category,severity,status,created_at"), "load reports")
+        except PersistenceError:
+            out.down = True
+            out.problems.append("reports: database unreachable")
+            return out
+        workflows = {w["report_id"]: w for w in rows("report_workflow",
+                                                     "report_id,lifecycle_stage,token_hash,state_ciphertext")}
+        by_id: dict[str, str] = {}
+        missing = 0
 
-    # ---- Committee Challenges -----------------------------------------------------------------
+        def add_report(r: dict) -> None:
+            nonlocal missing
+            w = workflows.get(r["id"])
+            if w is None:
+                # Created outside this application, or report_workflow (0051) not applied: no reporter token, no
+                # committee. Not shown with invented workflow data.
+                missing += 1
+                return
+            state = self._dec_json(w["state_ciphertext"], "workflow", r["id"], "state")
+            out.reports.append({"case_id": r["public_reference"], "status": w["lifecycle_stage"],
+                                "token_hash": w["token_hash"], **state})
+            by_id[r["id"]] = r["public_reference"]
 
-    def insert_challenge(
-        self,
-        challenge_id: str,
-        case_id: str,
-        member_id: str,
-        reason: str,
-        explanation: str,
-        proof_tx: str = "",
-        nullifier: str = "",
-    ) -> dict[str, Any]:
-        """Store a committee challenge submission."""
-        row = {
-            "id": challenge_id,
-            "case_id": case_id,
-            "report_reference": case_id,
-            "member_id": member_id,
-            "committee_member_reference": member_id,
-            "reason": reason,
-            "explanation": explanation,
-            "encrypted_rationale": explanation,
-            "status": "pending_review",
-            "proof_tx": proof_tx,
-            "nullifier": nullifier,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        res = self.client.table("committee_challenges").insert(row).execute()
-        return row
+        each("reports", reports, add_report)
+        if missing:
+            out.problems.append(f"reports: {missing} without workflow state (migration 0051?) not loaded")
 
-    def update_challenge_decision(
-        self,
-        challenge_id: str,
-        status: str,
-        reviewer_id: str,
-        rationale: str,
-    ) -> dict[str, Any]:
-        """Update an adjudication decision on a committee challenge."""
-        updates = {
-            "status": status,
-            "reviewer_id": reviewer_id,
-            "rationale": rationale,
-            "encrypted_decision_note": rationale,
-            "decided_at": datetime.now(timezone.utc).isoformat(),
-        }
-        res = self.client.table("committee_challenges").update(updates).eq("id", challenge_id).execute()
-        return updates
+        def add_evidence(e: dict) -> None:
+            if e["report_id"] in by_id:
+                out.evidence.setdefault(by_id[e["report_id"]], []).append({
+                    "evidence_id": e["storage_object_path"].rsplit("/", 1)[-1], "mime": e["mime_type"],
+                    "size": e["size_bytes"], "sha256": e["sha256_hex"]})
 
-    def list_challenges(self, case_id: str | None = None) -> list[dict[str, Any]]:
-        """List challenges for a specific case or all cases."""
-        query = self.client.table("committee_challenges").select("*")
-        if case_id:
-            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
-        res = query.order("created_at", desc=True).execute()
-        return res.data or []
+        each("evidence_items", rows("evidence_items",
+                                    "id,report_id,storage_object_path,sha256_hex,mime_type,size_bytes"), add_evidence)
 
-    # ---- Witness Invitations ------------------------------------------------------------------
+        def add_challenge(c: dict) -> None:
+            if c["report_id"] not in by_id:
+                return
+            reason = self._dec_json(c["reason_ciphertext"], "challenge", c["id"], "reason")
+            decision = (self._dec_json(c["decision_note_ciphertext"], "challenge", c["id"], "decision")
+                        if c.get("decision_note_ciphertext") else {})
+            out.challenges.setdefault(by_id[c["report_id"]], []).append({
+                "challenge_id": reason["challenge_id"], "member_id": c["committee_member_ref"],
+                "reason": reason["reason"], "explanation": reason["explanation"],
+                "status": challenge_status_from_row(c["status"]), "proof_tx": reason.get("proof_tx", ""),
+                "at": reason.get("submitted_at", ""), "reviewer_id": decision.get("reviewer_id"),
+                "rationale": decision.get("rationale"), "decided_at": c.get("decided_at")})
 
-    def insert_witness_invitation(
-        self,
-        invitation_id: str,
-        case_id: str,
-        code: str,
-        role_alias: str,
-        contact: str | None = None,
-        expires_at: str | None = None,
-    ) -> dict[str, Any]:
-        """Record a witness quorum invitation."""
-        enc_contact = None
-        contact_aad = None
-        if contact:
-            enc_contact, contact_aad = self._encrypt(contact, "witness", invitation_id, "contact")
+        each("committee_challenges", rows(
+            "committee_challenges",
+            "id,report_id,committee_member_ref,reason_ciphertext,status,decision_note_ciphertext,decided_at"),
+            add_challenge)
 
-        row = {
-            "id": invitation_id,
-            "case_id": case_id,
-            "report_reference": case_id,
-            "code": code,
-            "token_hash": code,
-            "role_alias": role_alias,
-            "encrypted_contact": enc_contact,
-            "contact_aad": contact_aad,
-            "status": "pending",
-            "statement_provided": False,
-            "expires_at": expires_at,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        res = self.client.table("witness_invitations").insert(row).execute()
-        return row
+        def add_message(m: dict) -> None:
+            if m["report_id"] not in by_id:
+                return
+            body = self._dec_json(m["body_ciphertext"], "message", m["id"], "body")
+            out.messages.setdefault(by_id[m["report_id"]], []).append({
+                "message_id": body["message_id"], "sender": SENDER_FROM_ROLE.get(m["sender_role"], "investigator"),
+                "text": body["text"], "at": str(m["created_at"])})
 
-    def get_witness_invitation_by_code(self, code: str) -> dict[str, Any] | None:
-        """Fetch witness invitation by code or token_hash."""
-        res = self.client.table("witness_invitations").select("*").eq("code", code).execute()
-        if not res.data:
-            res = self.client.table("witness_invitations").select("*").eq("token_hash", code).execute()
-        return res.data[0] if res.data else None
+        each("investigation_messages", rows("investigation_messages",
+                                            "id,report_id,sender_role,body_ciphertext,created_at", ordered=True),
+             add_message)
 
-    def update_witness_response(self, code: str, status: str) -> dict[str, Any]:
-        """Update witness response (accept or decline)."""
-        updates = {
-            "status": "accepted" if status == "accept" else "declined",
-            "statement_provided": status == "accept",
-            "responded_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table("witness_invitations").update(updates).eq("code", code).execute()
-        return updates
+        def add_invitation(w: dict) -> None:
+            if w["report_id"] not in by_id:
+                return
+            contact = self._dec_json(w["witness_contact_ciphertext"], "witness", w["id"], "contact")
+            out.invitations.append({
+                "invitation_id": contact["invitation_id"], "case_id": by_id[w["report_id"]],
+                "code_hash": w["invitation_token_hash"], "context": contact["context"], "alias": contact["alias"],
+                "response": {"accepted": "accept", "declined": "decline"}.get(w["status"]),
+                "invited_at": str(w.get("invited_at") or ""), "responded_at": w.get("responded_at")})
 
-    def list_witness_invitations(self, case_id: str | None = None) -> list[dict[str, Any]]:
-        """List witness invitations."""
-        query = self.client.table("witness_invitations").select("*")
-        if case_id:
-            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
-        res = query.order("created_at", desc=True).execute()
-        return res.data or []
-
-    # ---- Investigation Messaging --------------------------------------------------------------
-
-    def insert_message(self, message_id: str, case_id: str, sender: str, text: str) -> dict[str, Any]:
-        """Store an investigation message with AES-256 encrypted body."""
-        enc_body, body_aad = self._encrypt(text, "message", message_id, "body")
-        row = {
-            "id": message_id,
-            "case_id": case_id,
-            "report_reference": case_id,
-            "sender": sender,
-            "sender_role": sender,
-            "encrypted_body": enc_body,
-            "encrypted_message_body": enc_body,
-            "body_aad": body_aad,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table("investigation_messages").insert(row).execute()
-        return {
-            "message_id": message_id,
-            "case_id": case_id,
-            "sender": sender,
-            "text": text,
-            "at": row["created_at"],
-        }
-
-    def list_messages(self, case_id: str) -> list[dict[str, Any]]:
-        """Fetch all messages for a case and decrypt bodies."""
-        res = (
-            self.client.table("investigation_messages")
-            .select("*")
-            .or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
-            .order("created_at", desc=False)
-            .execute()
-        )
-        out = []
-        for r in res.data or []:
-            text = "[Encrypted Message]"
-            try:
-                body_cipher = r.get("encrypted_body") or r.get("encrypted_message_body")
-                if body_cipher:
-                    text = self._decrypt(body_cipher, "message", r["id"], "body", r.get("body_aad"))
-            except Exception as e:
-                logger.error("Failed to decrypt message %s: %s", r["id"], e)
-            out.append({
-                "message_id": r["id"],
-                "case_id": r.get("case_id") or r.get("report_reference"),
-                "sender": r.get("sender") or r.get("sender_role"),
-                "text": text,
-                "at": r["created_at"],
-            })
+        each("witness_invitations", rows(
+            "witness_invitations",
+            "id,report_id,invitation_token_hash,witness_contact_ciphertext,status,invited_at,responded_at"),
+            add_invitation)
         return out
 
-    # ---- Audit Events -------------------------------------------------------------------------
 
-    def insert_audit_event(
-        self,
-        case_id: str,
-        seq: int,
-        event_type: str,
-        payload: dict[str, Any],
-        salt: str = "",
-        commitment: str = "",
-        prev_hash: str = "",
-        entry_hash: str = "",
-    ) -> dict[str, Any]:
-        """Store an append-only audit event in Supabase."""
-        row = {
-            "case_id": case_id,
-            "report_reference": case_id,
-            "seq": seq,
-            "event_type": event_type,
-            "payload": payload,
-            "metadata": payload,
-            "actor_role": payload.get("actor_role", "system") if isinstance(payload, dict) else "system",
-            "salt": salt,
-            "commitment": commitment,
-            "prev_hash": prev_hash,
-            "previous_hash": prev_hash,
-            "entry_hash": entry_hash,
-            "event_hash": entry_hash,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table("audit_events").insert(row).execute()
-        return row
-
-    def list_audit_events(self, case_id: str | None = None) -> list[dict[str, Any]]:
-        """List audit events."""
-        query = self.client.table("audit_events").select("*")
-        if case_id:
-            query = query.or_(f"case_id.eq.{case_id},report_reference.eq.{case_id}")
-        res = query.order("seq", desc=False).execute()
-        return res.data or []
-
-    # ---- Incident Correlations ----------------------------------------------------------------
-
-    def insert_correlation(
-        self,
-        case_id_a: str,
-        case_id_b: str,
-        score: float,
-        method: str,
-        signals: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Store an advisory correlation pair in Supabase."""
-        row = {
-            "case_id_a": case_id_a,
-            "case_id_b": case_id_b,
-            "report_references": [case_id_a, case_id_b],
-            "score": score,
-            "similarity_score": score,
-            "method": method,
-            "signals": signals or [],
-            "review_status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table("incident_correlations").upsert(
-            row, on_conflict="case_id_a,case_id_b,method"
-        ).execute()
-        return row
-
-    def list_correlations(self, case_id: str | None = None) -> list[dict[str, Any]]:
-        """List advisory incident correlations from Supabase."""
-        query = self.client.table("incident_correlations").select("*")
-        if case_id:
-            query = query.or_(f"case_id_a.eq.{case_id},case_id_b.eq.{case_id}")
-        res = query.order("score", desc=True).execute()
-        return res.data or []
+def evidence_b64(content: bytes) -> str:
+    return base64.b64encode(content).decode()

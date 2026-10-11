@@ -30,6 +30,8 @@ def send_message(payload: MessageCreate, claims: dict = Depends(verify_access_to
         return MessageResponse(message_id=message.message_id, created_at=str(message.created_at))
     except IntegrationUnavailable as exc:
         raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+    except LookupError:
+        raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"}) from None
 
 
 @router.get("/{report_reference}")
@@ -65,3 +67,5 @@ def list_messages(report_reference: str, claims: dict = Depends(verify_access_to
         return {"messages": decrypted_messages}
     except IntegrationUnavailable as exc:
         raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+    except LookupError:
+        raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"}) from None

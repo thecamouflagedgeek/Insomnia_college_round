@@ -9,7 +9,9 @@ from app.chain.signals import bytes32_text, challenge_scope_text, complaint_scop
 from app.stub.main import create_app
 
 KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # test-only 32-byte key
-ENV = {"CHAIN_MODE": "offline", "STUB_ENROLL_CODES": "CODE-1", "STUB_ADMIN_KEY": "adm", "ANCHOR_INTERVAL_S": "0.05"}
+# DEMO_MODE off: tests start from an empty store instead of the seeded demo cases.
+ENV = {"CHAIN_MODE": "offline", "STUB_ENROLL_CODES": "CODE-1", "STUB_ADMIN_KEY": "adm", "ANCHOR_INTERVAL_S": "0.05",
+       "DEMO_MODE": "false"}
 ADMIN = {"X-Stub-Admin": "adm"}
 _nullifier = iter(range(1, 10_000))
 

@@ -26,6 +26,10 @@ def create_challenge_endpoint(payload: ChallengeCreate, claims: dict = Depends(v
         return {"challenge_id": challenge.challenge_id, "status": challenge.status}
     except IntegrationUnavailable as exc:
         raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+    except LookupError:
+        raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"}) from None
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "invalid_challenge", "message": str(exc)}) from None
 
 
 @router.post("/{challenge_id}/decision")

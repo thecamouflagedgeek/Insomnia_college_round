@@ -4,7 +4,11 @@ from __future__ import annotations
 from uuid import uuid4
 from dataclasses import dataclass
 from typing import Literal
-from app.core.database import Database, IntegrationUnavailable, TestRecord
+import json
+from datetime import datetime, timezone
+
+from app.core.database import Database, IntegrationUnavailable, TestRecord, require_report_id, run
+from app.services.encryption_service import EncryptedField, get_encryption_service
 from app.core.config import get_settings
 from app.schemas.challenge import ChallengeCreate, ChallengeDecision
 from app.models.committee import CommitteeMembership
@@ -60,27 +64,19 @@ def create_challenge(payload: ChallengeCreate, submitter_subject: str) -> Create
         )
         db.test_insert("challenges", test_record)
     else:
+        if not payload.committee_member_ref:
+            raise ValueError("committee_member_ref is required: name the challenged committee member")
         client = db.require_schema()
-        row = {
+        enc = get_encryption_service().encrypt_field(
+            json.dumps({"reason": payload.reason, "requested_action": payload.requested_action}),
+            "challenge", challenge_id, "reason")
+        run(client.table("committee_challenges").insert({
             "id": challenge_id,
-            "case_id": payload.report_reference,
-            "member_id": getattr(payload, "member_id", "usr_marcus"),
-            "reason": payload.reason,
-            "explanation": getattr(payload, "explanation", payload.reason),
-            "status": "pending_review",
-        }
-        try:
-            client.table("committee_challenges").insert(row).execute()
-        except Exception:
-            client.table("challenges").insert({
-                "challenge_id": challenge_id,
-                "report_reference": payload.report_reference,
-                "reason": payload.reason,
-                "requested_action": payload.requested_action,
-                "status": "pending",
-                "submitter_subject": submitter_subject,
-                "created_at": created_at,
-            }).execute()
+            "report_id": require_report_id(client, payload.report_reference),
+            "committee_member_ref": payload.committee_member_ref,
+            "reason_ciphertext": enc.ciphertext,
+            "status": "pending",
+        }), "save challenge")
 
     return CreatedChallenge(
         challenge_id=challenge_id,
@@ -113,20 +109,16 @@ def decide_challenge(challenge_id: str, payload: ChallengeDecision, decider_subj
             raise ValueError("Challenge not found")
     else:
         client = db.require_schema()
-        updates = {
-            "status": "upheld" if payload.decision == "accepted" else "rejected",
-            "reviewer_id": decider_subject,
-            "rationale": payload.rationale,
-        }
-        try:
-            client.table("committee_challenges").update(updates).eq("id", challenge_id).execute()
-        except Exception:
-            client.table("challenges").update({
-                "status": payload.decision,
-                "decision_rationale": payload.rationale,
-                "decided_by": decider_subject,
-                "decided_at": decided_at,
-            }).eq("challenge_id", challenge_id).execute()
+        note = get_encryption_service().encrypt_field(
+            json.dumps({"rationale": payload.rationale, "decided_by": decider_subject}),
+            "challenge", challenge_id, "decision")
+        updated = run(client.table("committee_challenges").update({
+            "status": payload.decision,  # accepted | rejected: both allowed values
+            "decision_note_ciphertext": note.ciphertext,
+            "decided_at": datetime.fromtimestamp(decided_at, timezone.utc).isoformat(),
+        }).eq("id", challenge_id).eq("status", "pending"), "record challenge decision")
+        if not updated:
+            raise ValueError("Challenge not found or already decided")
 
     return DecidedChallenge(
         challenge_id=challenge_id,
@@ -158,21 +150,24 @@ def get_challenge(challenge_id: str, db: Database | None = None) -> CreatedChall
         return None
     else:
         client = db.require_schema()
-        try:
-            res = client.table("committee_challenges").select("*").eq("id", challenge_id).execute()
-            if res.data:
-                row = res.data[0]
-                return CreatedChallenge(
-                    challenge_id=row["id"],
-                    report_reference=row["case_id"],
-                    reason=row["reason"],
-                    requested_action="recusal",
-                    status=row.get("status", "pending"),
-                    created_at=int(__import__("time").time()),
-                )
-        except Exception:
-            pass
-        return None
+        rows = run(client.table("committee_challenges").select("id,report_id,reason_ciphertext,status,created_at")
+                   .eq("id", challenge_id), "read challenge")
+        if not rows:
+            return None
+        row = rows[0]
+        reason = json.loads(get_encryption_service().decrypt_field(
+            EncryptedField(row["reason_ciphertext"], f"challenge:{challenge_id}:reason"), "challenge", challenge_id,
+            "reason"))
+        report = run(client.table("reports").select("public_reference").eq("id", row["report_id"]),
+                     "read report reference")
+        return CreatedChallenge(
+            challenge_id=row["id"],
+            report_reference=report[0]["public_reference"] if report else "",
+            reason=reason["reason"],
+            requested_action=reason["requested_action"],
+            status=row["status"],
+            created_at=int(datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")).timestamp()),
+        )
 
 
 def list_committee_memberships(subject: str, db: Database | None = None) -> list[CommitteeMembership]:

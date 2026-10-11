@@ -1,10 +1,11 @@
 """Complaint creation and retrieval with encryption at persistence boundary."""
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 from dataclasses import dataclass
 from typing import Any
-from app.core.database import Database, IntegrationUnavailable, TestRecord
+from app.core.database import Database, IntegrationUnavailable, TestRecord, report_row, run
+from app.core.supabase_repo import report_row_id
 from app.core.config import get_settings
 from app.schemas.complaint import ReportCreate
 from app.services.encryption_service import get_encryption_service, EncryptedField
@@ -44,8 +45,9 @@ def create_report(payload: ReportCreate, public_reference: str) -> dict:
         narrative=payload.narrative,
     )
 
-    # Create complaint record
-    complaint_id = uuid4()
+    # Create complaint record. The row id is derived from the public reference exactly as the integrated workflow
+    # derives it (app.core.supabase_repo.report_row_id), so both services address the same report the same way.
+    complaint_id = UUID(report_row_id(public_reference))
     record = Complaint(
         id=complaint_id,
         public_reference=public_reference,
@@ -71,25 +73,17 @@ def create_report(payload: ReportCreate, public_reference: str) -> dict:
         db.test_insert("complaints", test_record)
     else:
         client = db.require_schema()
-        row = {
-            "case_id": public_reference,
-            "category": getattr(payload, "category", "Other"),
-            "encrypted_title": encrypted_fields["title"].ciphertext,
-            "encrypted_narrative": encrypted_fields["narrative"].ciphertext,
-            "title_aad": encrypted_fields["title"].associated_data,
-            "narrative_aad": encrypted_fields["narrative"].associated_data,
+        # Canonical columns only; the AAD is rebuilt from the reference on read, so it is not stored. Severity has
+        # not been assessed by this route, so it starts at the neutral 'medium' (allowed: low|medium|high|critical).
+        run(client.table("reports").insert({
+            "id": str(complaint_id),
+            "public_reference": public_reference,
+            "category": payload.category,
+            "summary_ciphertext": encrypted_fields["title"].ciphertext,
+            "description_ciphertext": encrypted_fields["narrative"].ciphertext,
+            "severity": "medium",
             "status": "submitted",
-        }
-        try:
-            client.table("reports").insert(row).execute()
-        except Exception:
-            client.table("complaints").insert({
-                "id": str(complaint_id),
-                "public_reference": public_reference,
-                "encrypted_title": encrypted_fields["title"].ciphertext,
-                "encrypted_narrative": encrypted_fields["narrative"].ciphertext,
-                "status": "submitted",
-            }).execute()
+        }), "save report")
 
     return {
         "reference": public_reference,
@@ -123,28 +117,18 @@ def get_complaint_by_reference(reference: str, db: Database | None = None) -> Cr
         )
     else:
         client = db.require_schema()
-        data = None
-        try:
-            res = client.table("reports").select("*").eq("case_id", reference).execute()
-            if res.data:
-                data = res.data[0]
-        except Exception:
-            pass
-        if not data:
-            try:
-                res = client.table("complaints").select("*").eq("public_reference", reference).execute()
-                if res.data:
-                    data = res.data[0]
-            except Exception:
-                pass
+        data = report_row(client, reference)
         if not data:
             return None
+        ref = data["public_reference"]
         return CreatedComplaint(
-            id=str(data.get("id", data.get("case_id", ""))),
-            public_reference=data.get("case_id", data.get("public_reference", reference)),
-            encrypted_title=EncryptedField(ciphertext=data.get("encrypted_title", ""), associated_data=data.get("title_aad", "")),
-            encrypted_narrative=EncryptedField(ciphertext=data.get("encrypted_narrative", ""), associated_data=data.get("narrative_aad", "")),
-            status=data.get("status", "submitted"),
+            id=str(data["id"]),
+            public_reference=ref,
+            encrypted_title=EncryptedField(ciphertext=data.get("summary_ciphertext") or "",
+                                           associated_data=f"complaint:{ref}:title"),
+            encrypted_narrative=EncryptedField(ciphertext=data["description_ciphertext"],
+                                               associated_data=f"complaint:{ref}:narrative"),
+            status=data["status"],
         )
 
 

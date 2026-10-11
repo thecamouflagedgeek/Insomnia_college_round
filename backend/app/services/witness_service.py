@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from dataclasses import dataclass
 from typing import Any
-from app.core.database import Database, IntegrationUnavailable, TestRecord
+from app.core.database import Database, IntegrationUnavailable, TestRecord, require_report_id, run
 from app.core.config import get_settings
 from app.core.security import issue_token, token_digest, digest_matches
 from app.services.encryption_service import get_encryption_service, EncryptedField
@@ -70,17 +70,15 @@ def create_witness_invitation(report_reference: str, contact: str, ttl_seconds: 
         db.test_insert("witness_invitations", test_record)
     else:
         client = db.require_schema()
-        row = {
+        # No expires_at column: expiry is invited_at + the configured TTL, checked on validation.
+        run(client.table("witness_invitations").insert({
             "id": invitation_id,
-            "case_id": report_reference,
-            "code": digest,
-            "role_alias": "Witness",
-            "encrypted_contact": encrypted_contact.ciphertext,
-            "contact_aad": encrypted_contact.associated_data,
-            "status": "pending",
-            "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
-        }
-        client.table("witness_invitations").insert(row).execute()
+            "report_id": require_report_id(client, report_reference),
+            "invitation_token_hash": digest,
+            "witness_contact_ciphertext": encrypted_contact.ciphertext,
+            "status": "invited",
+            "invited_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+        }), "save witness invitation")
 
     return CreatedWitnessInvitation(
         invitation_id=invitation_id,
@@ -121,19 +119,23 @@ def validate_witness_token(token: str, invitation_id: str, db: Database | None =
         return False, None
     else:
         client = db.require_schema()
-        res = client.table("witness_invitations").select("*").eq("id", invitation_id).execute()
-        if not res.data:
+        rows = run(client.table("witness_invitations").select(
+            "id,invitation_token_hash,witness_contact_ciphertext,status,invited_at").eq("id", invitation_id),
+            "read witness invitation")
+        if not rows:
             return False, None
-        row = res.data[0]
-        stored_digest = row.get("code", "")
-        if not digest_matches(token, stored_digest):
+        row = rows[0]
+        if row["status"] != "invited" or not digest_matches(token, row["invitation_token_hash"]):
             return False, None
-        if not row.get("encrypted_contact"):
+        invited = datetime.fromisoformat(str(row["invited_at"]).replace("Z", "+00:00")).timestamp()
+        if time.time() >= invited + get_settings().witness_token_ttl_seconds:
+            return False, None
+        if not row.get("witness_contact_ciphertext"):
             return True, None
         encryption_service = get_encryption_service()
         encrypted_contact = EncryptedField(
-            ciphertext=row["encrypted_contact"],
-            associated_data=row.get("contact_aad", ""),
+            ciphertext=row["witness_contact_ciphertext"],
+            associated_data=f"witness:{invitation_id}:contact",
         )
         contact = encryption_service.decrypt_witness_contact(invitation_id, encrypted_contact)
         return True, contact

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.chain.config import ChainSettings
 from app.chain.routes import build_router
@@ -17,6 +18,7 @@ from app.chain.services import start_anchorer
 from app.stub.api import build_admin_router, build_api_router
 from app.stub.chain import build_stub_services
 from app.stub.hr import build_hr_router
+from app.core.supabase_repo import PersistenceError
 from app.stub.store import StubStore
 
 _OFFLINE_DEFAULTS = {"AMOY_RPC_URL": "offline", "RELAYER_PRIVATE_KEY": "0x" + "0" * 63 + "1",
@@ -49,7 +51,7 @@ def case_guard(request: Request, case_id: str, authorization: str | None = Heade
 
 def _init_offline_audit(chain, store: StubStore) -> None:
     for case in store.cases.values():
-        if not chain.audit.events(case.case_id):
+        if not chain.verifier.events(case.case_id):
             chain.audit.record(case.case_id, "complaint_submitted", {
                 "content_sha256": "0" * 64, "nullifier": case.nullifier, "proof_tx": case.proof_tx})
             if case.committee:
@@ -68,7 +70,8 @@ def _init_offline_audit(chain, store: StubStore) -> None:
                 chain.audit.record(case.case_id, "resolution_recorded", case.resolution)
 
 
-def create_app(env: dict[str, str] | None = None) -> FastAPI:
+def create_app(env: dict[str, str] | None = None, supabase_client=None) -> FastAPI:
+    """`supabase_client`: an already-built client (tests use an in-memory stand-in that enforces the schema)."""
     if env is None:
         root_dir = Path(__file__).resolve().parents[3]
         backend_dir = Path(__file__).resolve().parents[2]
@@ -106,35 +109,50 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
     supabase_repo = None
     supabase_url = env.get("SUPABASE_URL")
     supabase_key = env.get("SUPABASE_SECRET_KEY")
-    if supabase_url and supabase_key and supabase_key != "replace_me":
-        try:
-            from app.core.supabase_repo import SupabaseRepository
-            from supabase import create_client
-            sb_client = create_client(supabase_url, supabase_key)
-            supabase_repo = SupabaseRepository(sb_client, key_bytes)
-        except Exception as exc:
-            if is_prod:
-                raise RuntimeError(f"Production Supabase initialization failed: {exc}") from exc
+    # Configured means used: if Supabase cannot be used, the server still starts (enrolment, proofs and health keep
+    # working) but every write is refused with 503 and /health says why. It never falls back to local data silently.
+    supabase_down: str | None = None
+    supabase_configured = supabase_client is not None or bool(
+        supabase_url and supabase_key and supabase_key != "replace_me")
+    if supabase_configured:
+        from app.core.supabase_repo import SupabaseRepository
+        if key_bytes is None:
+            supabase_down = "ENCRYPTION_KEY missing or invalid; nothing is read or stored unencrypted"
+        else:
+            try:
+                supabase_repo = (SupabaseRepository(supabase_client, key_bytes) if supabase_client is not None
+                                 else SupabaseRepository.from_env(supabase_url, supabase_key, key_bytes))
+            except Exception as exc:
+                supabase_down = f"Supabase connection failed ({type(exc).__name__})"
     elif is_prod:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SECRET_KEY are required in production (APP_ENV=production)")
 
     store = StubStore(
         state_path or None,
         key_bytes,
-        seed_demo=demo_mode,
+        seed_demo=demo_mode and not supabase_configured,  # demo data never stands in for a real database
         supabase=supabase_repo
     )
+    if supabase_down:
+        store.persistence_down = supabase_down
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.chain = build_stub_services(settings, store, offline=mode == "offline")
-        if mode == "offline":
+        if mode == "offline" and store.supabase is None:
+            # Demo seed only: gives the seeded cases a starting audit trail. Never for real (Supabase) records,
+            # whose audit history is loaded as stored.
             _init_offline_audit(app.state.chain, store)
         stop = start_anchorer(app.state.chain)
         yield
         stop()
 
     app = FastAPI(title="INCOGNITO integration stub", lifespan=lifespan)
+
+    @app.exception_handler(PersistenceError)
+    async def persistence_failed(request: Request, exc: PersistenceError):
+        return JSONResponse(status_code=503, content={"detail": {
+            "reason": "persistence_failed", "message": "The data store could not complete this request."}})
     app.state.store = store
     app.state.supabase = supabase_repo
     app.state.chain_mode = mode

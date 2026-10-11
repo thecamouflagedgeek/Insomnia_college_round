@@ -101,3 +101,29 @@ class Database:
     def test_clear(self) -> None:
         self._assert_test_mode()
         self._test_storage.clear()
+
+
+# ---- canonical-schema helpers for the production services ------------------------------------------------------
+
+def run(query, what: str) -> list[dict[str, Any]]:
+    """Execute a Supabase query; any failure becomes IntegrationUnavailable (503), never a silent success."""
+    try:
+        res = query.execute()
+    except Exception as exc:
+        raise IntegrationUnavailable(f"{what} failed") from exc
+    return list(getattr(res, "data", None) or [])
+
+
+def report_row(client: Client, public_reference: str) -> dict[str, Any] | None:
+    """The canonical reports row for a public reference (reports.public_reference is unique)."""
+    rows = run(client.table("reports").select(
+        "id,public_reference,category,summary_ciphertext,description_ciphertext,severity,status,created_at")
+        .eq("public_reference", public_reference).limit(1), "read report")
+    return rows[0] if rows else None
+
+
+def require_report_id(client: Client, public_reference: str) -> str:
+    row = report_row(client, public_reference)
+    if row is None:
+        raise LookupError(public_reference)
+    return row["id"]

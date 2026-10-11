@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import logging
 import secrets
 from datetime import date, datetime, timezone
 from typing import Literal
@@ -13,9 +14,12 @@ from app.chain.routes import complaint_scope_texts
 from app.chain.semaphore import ProofIn
 from app.chain.signals import challenge_scope_text
 from app.chain.zk_service import ProofRejected
-from app.stub import intelligence
+from app.core.supabase_repo import EVIDENCE_MAX_PLAINTEXT, STORAGE_MIME_TYPES, PersistenceError
+from app.stub import intelligence, persist
 from app.stub.store import COMMITTEE, DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, Evidence, Invitation, \
     Message, StubStore, committee_entry, new_id, now, token_hash
+
+logger = logging.getLogger("incognito.persistence")
 
 MAX_EVIDENCE_FILES = 5
 MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
@@ -158,24 +162,52 @@ def add_message(request: Request, case: Case, sender: str, text: str) -> Message
 
 
 def decide_challenge(request: Request, case: Case, ch: ChallengeRec, decision: str, reviewer_id: str,
-                     rationale: str | None = None, replacement_id: str = DEFAULT_REPLACEMENT) -> None:
-    """decision: upheld | rejected. Upheld revokes the challenged member's access and seats a replacement."""
+                     rationale: str | None = None, replacement_id: str = DEFAULT_REPLACEMENT) -> bool:
+    """decision: upheld | rejected. Upheld revokes the challenged member's access and seats a replacement when an
+    eligible one exists (not seated, not the challenged member, never someone removed from this case). Everything is
+    checked before anything changes. Returns whether a replacement was seated."""
     if ch.status != "pending_review":
         raise HTTPException(409, {"reason": "already_decided"})
+    old = ch.member_id
+    seated = {m["member_id"] for m in case.committee}
+
+    def eligible(i: str) -> bool:
+        return (STAFF.get(i, {}).get("role") == "committee_member" and i not in seated and i != old
+                and i not in case.revoked_ids)
+
+    replacement: str | None = None
+    if decision == "upheld":
+        replacement = replacement_id if eligible(replacement_id) else next((i for i in STAFF if eligible(i)), None)
     ch.status, ch.reviewer_id, ch.rationale, ch.decided_at = decision, reviewer_id, rationale, now()
     audit = _chain(request).audit
     audit.record(case.case_id, "challenge_decided",
                  {"challenge_id": ch.challenge_id, "decision": decision, "reviewer_id": reviewer_id})
     if decision == "upheld":
-        old = ch.member_id
-        if replacement_id not in STAFF or replacement_id in {m["member_id"] for m in case.committee}:
-            replacement_id = next(i for i, s in STAFF.items() if s["role"] == "committee_member"
-                                  and i not in {m["member_id"] for m in case.committee} and i != old)
-        case.committee = [m for m in case.committee if m["member_id"] != old] + [committee_entry(replacement_id)]
+        case.committee = [m for m in case.committee if m["member_id"] != old]
+        if replacement:
+            case.committee.append(committee_entry(replacement))
         if old not in case.revoked_ids:
             case.revoked_ids.append(old)
-        audit.record(case.case_id, "member_replaced", {"old_member_id": old, "new_member_id": replacement_id})
+        if replacement:
+            audit.record(case.case_id, "member_replaced", {"old_member_id": old, "new_member_id": replacement})
         audit.record(case.case_id, "access_revoked", {"member_id": old})
+    return replacement is not None
+
+
+def _record_correlations(request: Request, case: Case) -> None:
+    """Advisory links to earlier reports, stored for human review (Supabase only). Never merges or rejects a report;
+    a failure here does not undo the stored report, so it is logged rather than reported as the report failing."""
+    store = _store(request)
+    if not store.supabase:
+        return
+    p = case.payload
+    others = [(c.case_id, f"{c.payload['title']} {c.payload['description']}")
+              for c in store.cases.values() if c.case_id != case.case_id]
+    for link in intelligence.related(f"{p['title']} {p['description']}", others):
+        try:
+            store.supabase.save_correlation(case.case_id, link["case_id"], link["score"], link["method"])
+        except PersistenceError:
+            logger.error("correlation for %s not stored", case.case_id)
 
 
 def create_invitation(request: Request, case: Case, context: str, alias: str) -> tuple[Invitation, str]:
@@ -204,6 +236,16 @@ def build_api_router() -> APIRouter:
             "chain_mode": request.app.state.chain_mode,
             "group_id": s.group_id,
             "registry": s.registry_address or None,
+            # ok: the process is up. database: what the data store can do right now (fault isolation report).
+            "database": {
+                "configured": store.supabase is not None or store.persistence_down is not None,
+                "status": ("down" if store.persistence_down else
+                           "degraded" if store.persistence_problems else
+                           "ok" if store.supabase is not None else "not_configured"),
+                "writes": store.persistence_down is None,
+                "reason": store.persistence_down,
+                "problems": list(store.persistence_problems),
+            },
             "persistence": {
                 "durable": store.is_durable,
                 "storage_type": "encrypted_file" if store.is_durable else "in_memory_process",
@@ -237,15 +279,15 @@ def build_api_router() -> APIRouter:
                 body.proof, body.payload, complaint_scope_texts(datetime.now(timezone.utc).date()), "complaint")
         except ProofRejected as exc:
             raise _rejected(exc)
-        audit = _chain(request).audit
         token = secrets.token_urlsafe(32)
         sev = intelligence.severity(payload.title, payload.description, payload.category)
-        with store.lock:
-            case_id = new_id("INC")
+        case_id = new_id("INC")
+        with store.lock, persist.write(request, new_case_id=case_id):
             case = Case(case_id, token_hash(token), body.payload, "submitted", now(),
                         nullifier=str(ok.nullifier), proof_tx=ok.tx_hash, severity=sev,
                         subject_ref=payload.subject_ref, fingerprint=fingerprint)
             store.cases[case_id] = case
+            audit = _chain(request).audit  # inside the write: deferred until the report row exists
             audit.record(case_id, "complaint_submitted", {
                 "content_sha256": content_sha256(body.payload.encode("utf-8")),
                 "nullifier": str(ok.nullifier), "proof_tx": ok.tx_hash})
@@ -255,6 +297,7 @@ def build_api_router() -> APIRouter:
                 "committee_id": "COM-DEMO", "member_ids": [m["member_id"] for m in COMMITTEE]})
             _set_status(request, case, "committee_assigned")
             store.save()
+        _record_correlations(request, case)
         return {"case_id": case_id, "case_token": token, "status": case.status, "proof_tx": ok.tx_hash,
                 "explorer_url": _explorer(request, ok.tx_hash)}
 
@@ -273,15 +316,20 @@ def build_api_router() -> APIRouter:
         ev = Evidence(new_id("EVD"), (file.filename or "file")[:200], file.content_type or "application/octet-stream",
                       len(content), sha, base64.b64encode(content).decode())
         store = _store(request)
-        with store.lock:
+        if store.supabase:
+            # The private bucket accepts these types up to 10 MB (stored encrypted); refuse early and say why.
+            if ev.mime not in STORAGE_MIME_TYPES:
+                raise HTTPException(415, {"reason": "unsupported_type",
+                                          "message": "Evidence must be a JPEG or PNG image, a PDF, or plain text."})
+            if len(content) > EVIDENCE_MAX_PLAINTEXT:
+                raise HTTPException(413, {"reason": "file_too_large"})
+        with store.lock, persist.write(request, case) as w:
             case.evidence.append(ev)
             _chain(request).audit.record(case.case_id, "evidence_sealed", {
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})
             if store.supabase:
-                try:
-                    store.supabase.insert_evidence(case.case_id, ev.evidence_id, ev.name, ev.mime, ev.size, sha, content)
-                except Exception as e:
-                    pass
+                w.add(lambda: store.supabase.save_evidence(case.case_id, ev.evidence_id, ev.mime, ev.size, sha,
+                                                           content))
             store.save()
         return {"evidence_id": ev.evidence_id, "name": ev.name, "mime": ev.mime, "size": ev.size, "sha256": sha}
 
@@ -292,8 +340,6 @@ def build_api_router() -> APIRouter:
             raise HTTPException(422, {"reason": "unknown_member"})
         if p.reason not in CHALLENGE_REASONS:
             raise HTTPException(422, {"reason": "unknown_reason"})
-        tx_hash = "0x" + secrets.token_hex(32)
-        nullifier = "0x" + secrets.token_hex(16)
         if request.app.state.chain_mode != "offline":
             if body.proof is None:
                 raise HTTPException(422, {"reason": "proof_required", "message": "Zero-knowledge proof is required for challenge submission in live mode."})
@@ -304,20 +350,22 @@ def build_api_router() -> APIRouter:
                 nullifier = str(ok.nullifier)
             except ProofRejected as exc:
                 raise _rejected(exc)
+        elif body.proof is not None:
+            # Offline chain, proof supplied: always checked (binding, scope, replay); never waved through.
+            try:
+                ok = _chain(request).zk.verify_submission(
+                    body.proof, body.payload, [challenge_scope_text(case.case_id, p.member_id)], "challenge")
+            except ProofRejected as exc:
+                raise _rejected(exc)
+            tx_hash = ok.tx_hash
+            nullifier = str(ok.nullifier)
         else:
-            # Explicit development / offline demo mode:
+            # Proof-less challenge: offline demo only, and it gets no invented transaction hash.
             if not getattr(request.app.state, "demo_permitted", True):
                 raise HTTPException(403, {"reason": "demo_disabled", "message": "Offline demo challenge submission is disabled in this environment."})
-            if body.proof is not None:
-                try:
-                    ok = _chain(request).zk.verify_submission(
-                        body.proof, body.payload, [challenge_scope_text(case.case_id, p.member_id)], "challenge")
-                    tx_hash = ok.tx_hash
-                    nullifier = str(ok.nullifier)
-                except Exception:
-                    pass
+            tx_hash, nullifier = "", ""
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, case) as w:
             rec = ChallengeRec(new_id("CHL"), p.member_id, p.reason, p.explanation, "pending_review", tx_hash, now())
             case.challenges.append(rec)
             case.status = "under_challenge"
@@ -325,10 +373,7 @@ def build_api_router() -> APIRouter:
                 "challenge_id": rec.challenge_id, "member_id": p.member_id,
                 "nullifier": nullifier, "proof_tx": tx_hash})
             if store.supabase:
-                try:
-                    store.supabase.insert_challenge(rec.challenge_id, case.case_id, rec.member_id, rec.reason, rec.explanation, tx_hash, nullifier)
-                except Exception as e:
-                    pass
+                w.add(lambda: store.supabase.save_challenge(case.case_id, rec))
             store.save()
         return {"challenge_id": rec.challenge_id, "member_id": rec.member_id, "status": rec.status,
                 "proof_tx": tx_hash, "explorer_url": _explorer(request, tx_hash)}
@@ -340,14 +385,9 @@ def build_api_router() -> APIRouter:
         if case.reflection is not None:
             raise HTTPException(409, {"reason": "already_reflected"})
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, case):
             case.reflection = {**body.model_dump(), "at": now()}
             _chain(request).audit.record(case.case_id, "reflection_recorded", {"reflection_id": new_id("REF")})
-            if store.supabase:
-                try:
-                    store.supabase.update_report(case.case_id, {"reflection": case.reflection})
-                except Exception as e:
-                    pass
             store.save()
         return {"recorded": True}
 
@@ -358,13 +398,10 @@ def build_api_router() -> APIRouter:
     @r.post("/reports/{case_id}/messages", status_code=201)
     def send_message(request: Request, body: MessageIn, case: Case = Depends(case_access)):
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, case) as w:
             msg = _add_message(request, case, "you", body.text)
             if store.supabase:
-                try:
-                    store.supabase.insert_message(msg.message_id, case.case_id, "you", body.text)
-                except Exception as e:
-                    pass
+                w.add(lambda: store.supabase.insert_message(case.case_id, msg))
             store.save()
         return _message_view(msg)
 
@@ -387,7 +424,7 @@ def build_api_router() -> APIRouter:
             raise HTTPException(404, {"reason": "invitation_not_found"})
         if inv.response is not None:
             raise HTTPException(409, {"reason": "already_responded"})
-        with store.lock:
+        with store.lock, persist.write(request) as w:
             inv.response, inv.responded_at = body.response, now()
             same = [i for i in store.invitations.values() if i.case_id == inv.case_id]
             _chain(request).audit.record(inv.case_id, "witness_response_recorded", {
@@ -395,10 +432,7 @@ def build_api_router() -> APIRouter:
                 "accepted_count": sum(i.response == "accept" for i in same),
                 "declined_count": sum(i.response == "decline" for i in same)})
             if store.supabase:
-                try:
-                    store.supabase.update_witness_response(inv.code_hash, body.response)
-                except Exception as e:
-                    pass
+                w.add(lambda: store.supabase.save_invitation(inv))
             store.save()
         return {"invitation_id": inv.invitation_id, "context": inv.context, "response": inv.response}
 
@@ -447,16 +481,19 @@ def build_admin_router() -> APIRouter:
     @r.post("/reports/{case_id}/investigator-message", status_code=201)
     def investigator_message(request: Request, case_id: str, body: InvestigatorMessageIn):
         store = _store(request)
-        with store.lock:
-            msg = _add_message(request, _case(request, case_id), "investigator", body.text)
+        case = _case(request, case_id)
+        with store.lock, persist.write(request, case) as w:
+            msg = _add_message(request, case, "investigator", body.text)
+            if store.supabase:
+                w.add(lambda: store.supabase.insert_message(case.case_id, msg))
             store.save()
         return _message_view(msg)
 
     @r.post("/reports/{case_id}/status")
     def status(request: Request, case_id: str, body: StatusIn):
         store = _store(request)
-        with store.lock:
-            case = _case(request, case_id)
+        case = _case(request, case_id)
+        with store.lock, persist.write(request, case):
             _set_status(request, case, body.status)
             store.save()
         return {"case_id": case_id, "status": case.status}
@@ -464,12 +501,14 @@ def build_admin_router() -> APIRouter:
     @r.post("/reports/{case_id}/challenges/{challenge_id}/decide")
     def decide(request: Request, case_id: str, challenge_id: str, body: DecisionIn):
         store = _store(request)
-        with store.lock:
-            case = _case(request, case_id)
-            ch = next((c for c in case.challenges if c.challenge_id == challenge_id), None)
-            if ch is None:
-                raise HTTPException(404, {"reason": "challenge_not_found"})
-            decide_challenge(request, case, ch, body.decision, "usr_aris")
+        case = _case(request, case_id)
+        ch = next((c for c in case.challenges if c.challenge_id == challenge_id), None)
+        if ch is None:
+            raise HTTPException(404, {"reason": "challenge_not_found"})
+        with store.lock, persist.write(request, case) as w:
+            replaced = decide_challenge(request, case, ch, body.decision, "usr_aris")
+            if store.supabase:
+                w.add(lambda: store.supabase.save_challenge(case.case_id, ch, replaced))
             store.save()
         return case_view(case)
 
@@ -477,8 +516,10 @@ def build_admin_router() -> APIRouter:
     def invite(request: Request, body: InviteIn):
         store = _store(request)
         case = _case(request, body.case_id)
-        with store.lock:
+        with store.lock, persist.write(request, case) as w:
             inv, code = create_invitation(request, case, body.context, "Witness")
+            if store.supabase:
+                w.add(lambda: store.supabase.save_invitation(inv))
             store.save()
         return {"invitation_id": inv.invitation_id, "witness_code": code}
 

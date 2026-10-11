@@ -13,6 +13,9 @@ from app.chain.verifier import CaseVerifier
 from app.chain.web3_client import TxSender, make_w3
 from app.chain.zk_repo import InMemoryZkRepository, Member, PostgresZkRepository
 from app.chain.zk_service import ZkService
+from app.core.supabase_audit import SupabaseAuditRepository, UnavailableAuditRepository
+from app.core.supabase_repo import PersistenceError, report_row_id
+from app.chain.hashing import case_key
 from app.stub.store import StubStore
 
 
@@ -78,28 +81,34 @@ class _SavingAnchorer(Anchorer):
 
 
 def _persist_offline_chain(store: StubStore, semaphore: OfflineSemaphore, registry: OfflineRegistry,
-                           zk_repo: InMemoryZkRepository, audit_repo: InMemoryAuditRepository) -> None:
+                           zk_repo: InMemoryZkRepository, audit_repo: InMemoryAuditRepository | None) -> None:
     """Offline mode keeps the chain in memory; mirror it into the (encrypted) state file next to the cases, so the
     audit history, used nullifiers and anchors survive a restart together with the cases they belong to."""
 
     def dump() -> dict:
-        with zk_repo._lock, audit_repo._lock:
-            return {
+        with zk_repo._lock:
+            d = {
                 "members": list(semaphore.members), "used": list(semaphore.used),
-                "anchors": {k: [[a.seq, a.head, a.timestamp] for a in v] for k, v in registry.store.items()},
                 "zk_members": [vars(m) for m in zk_repo._members.values()],
                 "nullifiers": [[n, *v] for n, v in zk_repo._nullifiers.items()],
-                "events": {c: [vars(e) for e in evs] for c, evs in audit_repo._events.items()},
-                "records": {c: [vars(r) for r in rs] for c, rs in audit_repo._anchors.items()},
             }
+        if audit_repo is not None:  # with Supabase, the audit chain and its anchors live in audit_events instead
+            with audit_repo._lock:
+                d["anchors"] = {k: [[a.seq, a.head, a.timestamp] for a in v] for k, v in registry.store.items()}
+                d["events"] = {c: [vars(e) for e in evs] for c, evs in audit_repo._events.items()}
+                d["records"] = {c: [vars(r) for r in rs] for c, rs in audit_repo._anchors.items()}
+        return d
 
     def load(d: dict) -> None:
         semaphore.members = list(d.get("members", []))
         semaphore.used = set(d.get("used", []))
-        registry.store = {k: [OnchainAnchor(seq=a[0], head=a[1], timestamp=a[2]) for a in v]
-                          for k, v in d.get("anchors", {}).items()}
+        if audit_repo is not None:
+            registry.store = {k: [OnchainAnchor(seq=a[0], head=a[1], timestamp=a[2]) for a in v]
+                              for k, v in d.get("anchors", {}).items()}
         zk_repo._members = {m["index"]: Member(**m) for m in d.get("zk_members", [])}
         zk_repo._nullifiers = {n[0]: tuple(n[1:]) for n in d.get("nullifiers", [])}
+        if audit_repo is None:
+            return
         audit_repo._events = {c: [AuditEvent(**e) for e in evs] for c, evs in d.get("events", {}).items()}
         audit_repo._anchors = {c: [AnchorRecord(**r) for r in rs] for c, rs in d.get("records", {}).items()}
 
@@ -113,7 +122,28 @@ def build_stub_services(settings: ChainSettings, store: StubStore, offline: bool
         semaphore, registry = OfflineSemaphore(), OfflineRegistry()
         zk_repo, audit_repo = InMemoryZkRepository(), InMemoryAuditRepository()
         group_id = settings.group_id or 0
-        if store.persistent:
+        if store.supabase is not None or store.persistence_down:
+            try:
+                if store.supabase is None:
+                    raise PersistenceError("no database connection")
+                audit_repo = SupabaseAuditRepository(store.supabase, {report_row_id(c): c for c in store.cases})
+                if audit_repo.skipped:
+                    store.persistence_problems.append(f"audit_events: {audit_repo.skipped} malformed row(s) skipped")
+            except PersistenceError:
+                # The audit log is unreadable: verification shows nothing (never a pass) and writes are refused.
+                audit_repo = UnavailableAuditRepository()
+                store.persistence_down = store.persistence_down or "audit log unavailable at startup"
+                store.persistence_problems.append("audit_events: could not be read")
+            # The offline test chain has no independent anchor store, so its "on-chain" heads are rebuilt from the
+            # stored anchor rows. That keeps verification consistent across restarts; it proves nothing beyond the
+            # database itself. CHAIN_MODE=live anchors to the real registry instead.
+            for cid in store.cases:
+                for a in audit_repo.anchors(cid):
+                    registry.store.setdefault(case_key(cid), []).append(OnchainAnchor(seq=a.seq, head=a.head,
+                                                                                      timestamp=0))
+            if store.persistent:
+                _persist_offline_chain(store, semaphore, registry, zk_repo, None)
+        elif store.persistent:
             _persist_offline_chain(store, semaphore, registry, zk_repo, audit_repo)
     else:
         if not settings.database_url or settings.group_id is None:

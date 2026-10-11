@@ -93,32 +93,24 @@ async def upload_evidence(reference: str, file: UploadFile = File(...), claims: 
 
     storage_uploaded = False
     evidence_id = None
-    try:
-        settings = get_settings()
-        db = Database.from_settings(settings)
-        if db.client:
-            from uuid import uuid4
-            evidence_id = f"EVD-{uuid4().hex[:8]}"
-            bucket_name = getattr(settings, "supabase_storage_bucket", "incognito-evidence")
-            db.client.storage.from_(bucket_name).upload(
-                path=storage_path,
-                file=data,
-                file_options={"content-type": validated.content_type, "upsert": "true"}
-            )
-            db.client.table("evidence_items").insert({
-                "id": evidence_id,
-                "case_id": reference,
-                "name": validated.filename,
-                "mime": validated.content_type,
-                "size": validated.size,
-                "sha256": validated.sha256,
-                "storage_path": storage_path,
-                "bucket": bucket_name,
-                "verification_status": "verified"
-            }).execute()
-            storage_uploaded = True
-    except Exception:
-        pass
+    settings = get_settings()
+    db = Database.from_settings(settings)
+    if db.client:
+        # Same path as the integrated workflow: encrypted object in the private bucket, then canonical metadata.
+        # Any failure is reported, never answered with "validated" as if it were stored.
+        from uuid import uuid4
+        from app.core.database import report_row
+        from app.core.supabase_repo import PersistenceError, SupabaseRepository
+        from app.services.encryption_service import get_encryption_service
+        if report_row(db.client, reference) is None:
+            raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"})
+        evidence_id = f"EVD-{uuid4().hex[:8].upper()}"
+        try:
+            SupabaseRepository(db.client, get_encryption_service()._key, settings.supabase_storage_bucket) \
+                .save_evidence(reference, evidence_id, validated.content_type, validated.size, validated.sha256, data)
+        except PersistenceError as exc:
+            raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+        storage_uploaded = True
 
     return {
         "validated": True,

@@ -32,6 +32,8 @@ def invite_witness(payload: WitnessInvitationCreate, claims: dict = Depends(veri
         )
     except IntegrationUnavailable as exc:
         raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+    except LookupError:
+        raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"}) from None
 
 
 @router.post("/invitations/validate")
@@ -58,3 +60,5 @@ def validate_invitation(payload: WitnessTokenValidation, claims: dict = Depends(
         return {"valid": is_valid, "contact": contact}
     except IntegrationUnavailable as exc:
         raise HTTPException(503, detail={"code": "integration_unavailable", "message": str(exc)}) from None
+    except LookupError:
+        raise HTTPException(404, detail={"code": "not_found", "message": "Report not found"}) from None

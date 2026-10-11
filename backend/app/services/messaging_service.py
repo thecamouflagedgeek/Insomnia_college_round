@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from uuid import uuid4
 from dataclasses import dataclass
 from typing import Any
-from app.core.database import Database, IntegrationUnavailable, TestRecord
+from app.core.database import Database, IntegrationUnavailable, TestRecord, require_report_id, run
 from app.core.config import get_settings
 from app.services.encryption_service import get_encryption_service, EncryptedField
 from app.models.message import InvestigationMessage
@@ -62,14 +63,12 @@ def send_investigation_message(report_reference: str, body: str, thread_token: s
         db.test_insert("investigation_messages", test_record)
     else:
         client = db.require_schema()
-        row = {
+        run(client.table("investigation_messages").insert({
             "id": message_id,
-            "case_id": report_reference,
-            "sender": "investigator",
-            "encrypted_body": encrypted_body.ciphertext,
-            "body_aad": encrypted_body.associated_data,
-        }
-        client.table("investigation_messages").insert(row).execute()
+            "report_id": require_report_id(client, report_reference),
+            "sender_role": "investigator",
+            "body_ciphertext": encrypted_body.ciphertext,
+        }), "save message")
 
     return CreatedMessage(
         message_id=message_id,
@@ -105,21 +104,15 @@ def list_investigation_messages(report_reference: str, db: Database | None = Non
         return messages
     else:
         client = db.require_schema()
-        res = client.table("investigation_messages").select("*").eq("case_id", report_reference).order("created_at", desc=False).execute()
-        messages = []
-        for row in res.data or []:
-            encrypted_body = EncryptedField(
-                ciphertext=row["encrypted_body"],
-                associated_data=row.get("body_aad", ""),
-            )
-            created_ts = int(time.time())
-            messages.append(CreatedMessage(
-                message_id=row["id"],
-                report_reference=row["case_id"],
-                encrypted_body=encrypted_body,
-                created_at=created_ts,
-            ))
-        return messages
+        rows = run(client.table("investigation_messages").select("id,body_ciphertext,created_at")
+                   .eq("report_id", require_report_id(client, report_reference)).order("created_at"), "read messages")
+        return [CreatedMessage(
+            message_id=row["id"],
+            report_reference=report_reference,
+            encrypted_body=EncryptedField(ciphertext=row["body_ciphertext"],
+                                          associated_data=f"message:{row['id']}:body"),
+            created_at=int(datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")).timestamp()),
+        ) for row in rows]
 
 
 def decrypt_message_body(message: CreatedMessage) -> str:

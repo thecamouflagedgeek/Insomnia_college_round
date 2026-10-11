@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from app.chain.hashing import content_sha256
 from app.stub.api import (_chain, _store, add_message, create_invitation, decide_challenge)
-from app.stub import intelligence
+from app.stub import intelligence, persist
 from app.stub.store import DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, committee_entry, new_id, now
 from app.utils.pdf_generator import investigation_pdf
 
@@ -261,9 +261,9 @@ def build_hr_router() -> APIRouter:
 
     @r.post("/cases/{case_id}/committee")
     def assign_committee(request: Request, case_id: str, body: CommitteeAssignIn, user: Staff = Depends(staff)):
-        c = _case_for(request, user, case_id)
         if user.role not in ("hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
+        c = _case_for(request, user, case_id)
         if c.status in ("resolved", "closed"):
             raise HTTPException(409, {"reason": "case_closed", "message": f"Case {case_id} is closed; its committee can no longer change."})
         pending = [ch for ch in c.challenges if ch.status == "pending_review"]
@@ -271,24 +271,16 @@ def build_hr_router() -> APIRouter:
             raise HTTPException(409, {"reason": "challenge_pending", "message": "A committee challenge is pending review. The committee cannot change until it is decided."})
         if len(set(body.member_ids)) != len(body.member_ids):
             raise HTTPException(422, {"reason": "duplicate_committee_members", "message": "All committee members must be distinct individuals."})
-        if any(mid not in STAFF for mid in body.member_ids):
+        if any(STAFF.get(mid, {}).get("role") != "committee_member" for mid in body.member_ids):
             raise HTTPException(422, {"reason": "unknown_committee_member", "message": "One or more committee members are not valid staff members."})
         if any(mid in c.revoked_ids for mid in body.member_ids):
             raise HTTPException(403, {"reason": "revoked_member_ineligible", "message": "A recused or revoked member cannot be assigned to this committee."})
         store = _store(request)
-        with store.lock:
-            c.committee = [committee_entry(mid) for mid in body.member_ids if mid in STAFF]
+        with store.lock, persist.write(request, c):
+            c.committee = [committee_entry(mid) for mid in body.member_ids]
             if c.status == "submitted":
                 c.status = "committee_assigned"
             _chain(request).audit.record(c.case_id, "committee_assigned", {"member_ids": body.member_ids})
-            if store.supabase:
-                try:
-                    store.supabase.update_report(c.case_id, {
-                        "status": c.status,
-                        "committee": c.committee,
-                    })
-                except Exception:
-                    pass
             store.save()
         return complaint_dto(request, c)
 
@@ -306,13 +298,10 @@ def build_hr_router() -> APIRouter:
         if user.role not in ("assigned_investigator", "hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only the investigation team can message the reporter.")
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, c) as w:
             m = add_message(request, c, "investigator", body.text)
             if store.supabase:
-                try:
-                    store.supabase.insert_message(m.message_id, c.case_id, "investigator", body.text)
-                except Exception:
-                    pass
+                w.add(lambda: store.supabase.insert_message(c.case_id, m))
             store.save()
         return {"id": m.message_id, "sender": f"{user.name} ({user.title})", "text": m.text, "timestamp": m.at,
                 "isEncrypted": True}
@@ -352,27 +341,16 @@ def build_hr_router() -> APIRouter:
                              f"challenges. Current user role: {user.role}")
         c, ch = _find_challenge(request, challenge_id)
         store = _store(request)
-        with store.lock:
-            decide_challenge(request, c, ch, "upheld" if body.decision == "approve" else "rejected", user.id,
-                             body.rationale, body.replacement_member_id)
-            if c.status == "committee_assigned":
+        with store.lock, persist.write(request, c) as w:
+            replaced = decide_challenge(request, c, ch, "upheld" if body.decision == "approve" else "rejected",
+                                        user.id, body.rationale, body.replacement_member_id)
+            # Filing a challenge put the case under challenge; once decided (and none other pending) it moves on.
+            if c.status in ("committee_assigned", "under_challenge") and not any(
+                    x.status == "pending_review" for x in c.challenges):
                 _chain(request).audit.record(c.case_id, "status_changed", {"from": c.status, "to": "investigating"})
                 c.status = "investigating"
             if store.supabase:
-                try:
-                    store.supabase.update_challenge_decision(
-                        ch.challenge_id,
-                        ch.status,
-                        user.id,
-                        body.rationale,
-                    )
-                    store.supabase.update_report(c.case_id, {
-                        "status": c.status,
-                        "committee": c.committee,
-                        "revoked_ids": c.revoked_ids,
-                    })
-                except Exception:
-                    pass
+                w.add(lambda: store.supabase.save_challenge(c.case_id, ch, replaced))
             store.save()
         return {"challenge": challenge_dto(c, ch), "updatedComplaint": complaint_dto(request, c)}
 
@@ -408,19 +386,11 @@ def build_hr_router() -> APIRouter:
         if user.role not in ("assigned_investigator", "administrator"):
             raise _forbidden("403: Forbidden - Only the assigned investigator can issue Witness Quorum invitations.")
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, c) as w:
             n = sum(i.case_id == case_id for i in store.invitations.values())
             inv, code = create_invitation(request, c, body.context, body.alias or f"Witness {chr(65 + n)}")
             if store.supabase:
-                try:
-                    store.supabase.insert_witness_invitation(
-                        invitation_id=inv.invitation_id,
-                        case_id=c.case_id,
-                        code=inv.code_hash,
-                        role_alias=inv.alias,
-                    )
-                except Exception:
-                    pass
+                w.add(lambda: store.supabase.save_invitation(inv))
             store.save()
         dto = next(d for d in _witness_dtos(request, user, c) if d["id"] == inv.invitation_id)
         return {**dto, "witnessCode": code}
@@ -492,7 +462,7 @@ def build_hr_router() -> APIRouter:
         if c.resolution is not None:
             raise HTTPException(409, {"reason": "already_resolved"})
         store = _store(request)
-        with store.lock:
+        with store.lock, persist.write(request, c):
             rid = new_id("RES")
             c.resolution = {"resolution_id": rid, "outcome": body.outcome, "summary": body.summary,
                             "actions": body.actions, "by": user.id, "at": now()}
@@ -500,14 +470,6 @@ def build_hr_router() -> APIRouter:
             _chain(request).audit.record(case_id, "resolution_recorded", {"resolution_id": rid, "content_sha256": digest})
             _chain(request).audit.record(case_id, "status_changed", {"from": c.status, "to": "resolved"})
             c.status = "resolved"
-            if store.supabase:
-                try:
-                    store.supabase.update_report(case_id, {
-                        "status": "resolved",
-                        "resolution": c.resolution,
-                    })
-                except Exception:
-                    pass
             store.save()
         return complaint_dto(request, c)
 
