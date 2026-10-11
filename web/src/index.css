@@ -14,6 +14,8 @@
   --color-ink: #191629;
   --color-ink-soft: #3b3752;
   --color-muted: #66617f;
+  --color-faint: #8a85a0;
+  --color-dot: #a19cb6;
   --color-night: #191629;
   --color-night-2: #252139;
 
@@ -253,7 +255,7 @@
       background-color 150ms ease;
   }
   .field::placeholder {
-    color: #8a85a0;
+    color: var(--color-faint);
   }
   .field:hover:not(:disabled) {
     border-color: var(--color-line-strong);

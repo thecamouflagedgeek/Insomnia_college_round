@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DashboardLayout } from './components/layout/DashboardLayout';
-import { NavPage } from './components/layout/nav';
+import { NavPage, pageFromHash, hashFor } from './components/layout/nav';
 import { ApiService } from './services/api';
 import { Complaint } from './types/complaint';
 
@@ -16,8 +16,30 @@ import { RepeatAllegations } from './pages/RepeatAllegations';
 
 function AppContent() {
   const { currentUser } = useAuth();
-  const [currentPage, setCurrentPage] = useState<NavPage>('dashboard');
-  const [selectedCaseId, setSelectedCaseId] = useState<string>('');
+  // The hash carries the page (and case id) so a refresh or shared link reopens the same view.
+  const initial = pageFromHash(window.location.hash);
+  const [currentPage, setCurrentPage] = useState<NavPage>(initial.page);
+  const [selectedCaseId, setSelectedCaseId] = useState<string>(initial.caseId ?? '');
+
+  const firstSync = useRef(true);
+  useEffect(() => {
+    const target = hashFor(currentPage, selectedCaseId);
+    if (window.location.hash !== target) {
+      // Normalise the landing URL in place; later moves get their own history entry for Back.
+      window.history[firstSync.current ? 'replaceState' : 'pushState'](null, '', target);
+    }
+    firstSync.current = false;
+  }, [currentPage, selectedCaseId]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const next = pageFromHash(window.location.hash);
+      setCurrentPage(next.page);
+      if (next.caseId) setSelectedCaseId(next.caseId);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // Start on the newest case this user can access (live ids replace the mock's INC-892).
   useEffect(() => {

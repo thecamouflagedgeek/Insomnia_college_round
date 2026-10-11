@@ -20,11 +20,13 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = async () => {
     setAccessError(null);
     const res = await ApiService.getMessages(complaintId);
+    setIsDemo(res.source === 'stateful_mock');
     if (res.success && res.data) setMessages(res.data);
     else {
       setMessages([]);
@@ -132,7 +134,7 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
             <span className="hidden sm:inline">{sending ? 'Sending…' : 'Send'}</span>
           </button>
         </div>
-        <p className="mt-1.5 text-[0.6875rem] text-muted">Enter to send · Shift+Enter for a new line · Every message is recorded in the Silent Audit.</p>
+        <p className="mt-1.5 text-[0.6875rem] text-muted">Enter to send · Shift+Enter for a new line · {isDemo ? 'Demo data: messages stay in this browser and are not audited.' : 'Every message is recorded in the Silent Audit.'}</p>
       </form>
     </section>
   );

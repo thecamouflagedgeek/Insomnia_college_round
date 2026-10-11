@@ -4,7 +4,7 @@ const CONFIG: Record<SeverityLevel, { label: string; cls: string; dot: string }>
   critical: { label: 'Critical', cls: 'bg-danger-50 text-danger-700', dot: 'bg-danger-500' },
   high: { label: 'High', cls: 'bg-attn-50 text-attn-700', dot: 'bg-attn-500' },
   medium: { label: 'Medium', cls: 'bg-brand-50 text-brand-700', dot: 'bg-brand-500' },
-  low: { label: 'Low', cls: 'bg-sunken text-muted', dot: 'bg-[#a19cb6]' }
+  low: { label: 'Low', cls: 'bg-sunken text-muted', dot: 'bg-dot' }
 };
 
 /** Triage severity from the backend's severity engine; a review cue, not a finding. */
