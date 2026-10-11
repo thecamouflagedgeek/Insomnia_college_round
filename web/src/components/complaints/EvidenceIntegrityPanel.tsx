@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, FileText, Paperclip, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Paperclip, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
 import { EvidenceFile } from '../../types/complaint';
 import { ApiService } from '../../services/api';
 import { Section } from '../ui/Section';
@@ -72,6 +72,20 @@ export function EvidenceIntegrityPanel({ evidence, complaintId }: EvidenceIntegr
                     {check?.state === 'checking' ? 'Verifying…' : check?.state === 'done' ? 'Verify again' : 'Verify'}
                   </button>
                 </div>
+                {(item.integrityFlags?.length ?? 0) > 0 && (
+                  <div className="mt-3 rounded-xl bg-attn-50 px-3 py-2 text-xs text-attn-700">
+                    <p className="flex items-center gap-1.5 font-semibold">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Worth a closer look
+                    </p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      {item.integrityFlags!.map((f) => (
+                        <li key={f.code}>{f.message}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-attn-600">Automated cues, not a finding that the file is fake.</p>
+                  </div>
+                )}
                 {check?.state === 'done' && (
                   <p
                     role="status"

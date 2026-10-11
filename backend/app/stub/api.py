@@ -13,7 +13,7 @@ from app.chain.routes import complaint_scope_texts
 from app.chain.semaphore import ProofIn
 from app.chain.signals import challenge_scope_text
 from app.chain.zk_service import ProofRejected
-from app.stub import intelligence
+from app.stub import evidence_check, intelligence
 from app.stub.store import COMMITTEE, DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, Evidence, Invitation, \
     Message, StubStore, committee_entry, new_id, now, token_hash
 
@@ -269,11 +269,18 @@ def build_api_router() -> APIRouter:
         content = await file.read(MAX_EVIDENCE_BYTES + 1)
         if len(content) > MAX_EVIDENCE_BYTES:
             raise HTTPException(413, {"reason": "file_too_large"})
-        sha = hashlib.sha256(content).hexdigest()
-        ev = Evidence(new_id("EVD"), (file.filename or "file")[:200], file.content_type or "application/octet-stream",
-                      len(content), sha, base64.b64encode(content).decode())
         store = _store(request)
+        digest = lambda b: hashlib.sha256(b).hexdigest()
         with store.lock:
+            elsewhere = {h for c in store.cases.values() if c.case_id != case.case_id
+                         for e in c.evidence for h in (e.sha256, e.original_sha256) if h}
+            incident = case.payload.get("incident_date")
+            check = evidence_check.analyse(content, file.content_type or "", date.fromisoformat(incident)
+                                           if incident else None, elsewhere, digest)
+            # The cleaned copy (identifying metadata removed) is what is stored, sealed and later shown to staff.
+            sha = digest(check.content)
+            ev = Evidence(new_id("EVD"), (file.filename or "file")[:200], check.mime, len(check.content), sha,
+                          base64.b64encode(check.content).decode(), check.flags, digest(content))
             case.evidence.append(ev)
             _chain(request).audit.record(case.case_id, "evidence_sealed", {
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})

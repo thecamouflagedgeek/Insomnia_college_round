@@ -29,6 +29,8 @@ export interface EvidenceFile {
   uploadTimestamp: string;
   verificationStatus: 'verified' | 'tampered' | 'pending';
   storagePath: string;
+  /** Review cues from evidence intake (live backend only); never a verdict on authenticity. */
+  integrityFlags?: { code: string; message: string }[];
 }
 
 export interface Complaint {

@@ -136,7 +136,8 @@ def complaint_dto(request: Request, case: Case, verification=None) -> dict:
         "sha256Hash": e.sha256, "zkpCommitment": case.nullifier, "uploadTimestamp": case.created_at,
         "verificationStatus": {"verified": "verified", "pending_anchor": "pending"}.get(
             ev_status.get(e.evidence_id, "verified"), "tampered"),
-        "storagePath": f"stub://{case.case_id}/{e.evidence_id}"} for e in case.evidence]
+        "storagePath": f"stub://{case.case_id}/{e.evidence_id}",
+        "integrityFlags": list(e.flags)} for e in case.evidence]
     status = _status(request, case)
     pending = next((c for c in case.challenges if c.status == "pending_review"), None)
     return {

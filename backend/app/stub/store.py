@@ -67,6 +67,10 @@ class Evidence:
     size: int
     sha256: str
     content_b64: str
+    # Integrity cues for reviewers (app.stub.evidence_check) and the upload's own hash, used only to spot the same
+    # file filed on another case. Neither reveals capture time, place or device.
+    flags: list[dict] = field(default_factory=list)
+    original_sha256: str = ""
 
 
 @dataclass
