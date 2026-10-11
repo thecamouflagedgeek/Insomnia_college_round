@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { TopBar } from './TopBar';
 import { NavPage } from './nav';
-import { ApiSecurityModal } from './ApiSecurityModal';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
 
 interface DashboardLayoutProps {
@@ -12,7 +11,6 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ currentPage, onNavigate, pendingChallengesCount = 0, children }: DashboardLayoutProps) {
-  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const backendStatus = useBackendStatus();
 
   return (
@@ -28,12 +26,10 @@ export function DashboardLayout({ currentPage, onNavigate, pendingChallengesCoun
         onNavigate={onNavigate}
         pendingChallengesCount={pendingChallengesCount}
         backendStatus={backendStatus}
-        onOpenApiDebugger={() => setIsApiModalOpen(true)}
       />
       <main id="main" key={currentPage} className="mx-auto max-w-[1440px] animate-enter px-4 pb-12 pt-3 sm:px-6">
         {children}
       </main>
-      <ApiSecurityModal isOpen={isApiModalOpen} onClose={() => setIsApiModalOpen(false)} />
     </div>
   );
 }

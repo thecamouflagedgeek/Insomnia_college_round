@@ -409,6 +409,58 @@ export const INITIAL_WITNESS_INVITATIONS: WitnessInvitation[] = [
     status: 'declined',
     respondedAt: '2026-10-09T13:10:00Z',
     statementProvided: false
+  },
+  {
+    id: 'WIT-05',
+    complaintId: 'INC-741',
+    anonymousAlias: 'Witness Epsilon (Strategy Director)',
+    invitedAt: '2026-10-06T09:30:00Z',
+    status: 'accepted',
+    respondedAt: '2026-10-06T14:10:00Z',
+    statementProvided: true,
+    statementLengthWords: 280,
+    encryptedStatementRef: 'vault/witnesses/INC-741/wit-05-enc.gpg'
+  },
+  {
+    id: 'WIT-06',
+    complaintId: 'INC-741',
+    anonymousAlias: 'Witness Zeta (Senior Events Coordinator)',
+    invitedAt: '2026-10-06T10:00:00Z',
+    status: 'accepted',
+    respondedAt: '2026-10-06T16:30:00Z',
+    statementProvided: true,
+    statementLengthWords: 195,
+    encryptedStatementRef: 'vault/witnesses/INC-741/wit-06-enc.gpg'
+  },
+  {
+    id: 'WIT-07',
+    complaintId: 'INC-741',
+    anonymousAlias: 'Witness Eta (Associate Partner)',
+    invitedAt: '2026-10-06T11:15:00Z',
+    status: 'pending',
+    statementProvided: false
+  },
+  {
+    id: 'WIT-08',
+    complaintId: 'INC-650',
+    anonymousAlias: 'Witness Theta (Principal Systems Architect)',
+    invitedAt: '2026-10-03T10:15:00Z',
+    status: 'accepted',
+    respondedAt: '2026-10-03T15:20:00Z',
+    statementProvided: true,
+    statementLengthWords: 410,
+    encryptedStatementRef: 'vault/witnesses/INC-650/wit-08-enc.gpg'
+  },
+  {
+    id: 'WIT-09',
+    complaintId: 'INC-650',
+    anonymousAlias: 'Witness Iota (Staff Reliability Engineer)',
+    invitedAt: '2026-10-03T11:00:00Z',
+    status: 'accepted',
+    respondedAt: '2026-10-03T17:40:00Z',
+    statementProvided: true,
+    statementLengthWords: 230,
+    encryptedStatementRef: 'vault/witnesses/INC-650/wit-09-enc.gpg'
   }
 ];
 

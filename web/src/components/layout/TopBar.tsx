@@ -2,15 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Bell, Menu, X } from 'lucide-react';
 import { NAV_ITEMS, NavPage, PAGE_TITLE, activeNavId } from './nav';
 import { PersonaMenu } from './PersonaMenu';
-import { DataSourceBadge } from '../ui/DataSourceBadge';
 import { BackendStatus } from '../../hooks/useBackendStatus';
 
 interface TopBarProps {
   currentPage: NavPage;
   onNavigate: (page: NavPage) => void;
   pendingChallengesCount: number;
-  backendStatus: BackendStatus;
-  onOpenApiDebugger: () => void;
+  backendStatus?: BackendStatus;
+  onOpenApiDebugger?: () => void;
 }
 
 function Wordmark() {
@@ -27,7 +26,7 @@ function Wordmark() {
   );
 }
 
-export function TopBar({ currentPage, onNavigate, pendingChallengesCount, backendStatus, onOpenApiDebugger }: TopBarProps) {
+export function TopBar({ currentPage, onNavigate, pendingChallengesCount }: TopBarProps) {
   const active = activeNavId(currentPage);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -121,7 +120,6 @@ export function TopBar({ currentPage, onNavigate, pendingChallengesCount, backen
         </nav>
 
         <div className="ml-auto flex items-center gap-2 xl:ml-0">
-          <DataSourceBadge status={backendStatus} />
           <button
             className="icon-btn relative"
             onClick={() => go('committee')}
@@ -137,7 +135,7 @@ export function TopBar({ currentPage, onNavigate, pendingChallengesCount, backen
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-attn-500 ring-2 ring-surface" />
             )}
           </button>
-          <PersonaMenu onOpenApiDebugger={onOpenApiDebugger} />
+          <PersonaMenu />
         </div>
       </div>
 

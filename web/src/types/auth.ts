@@ -37,7 +37,7 @@ export const DEMO_USERS: User[] = [
     title: 'Lead Workplace Misconduct Investigator',
     department: 'Independent Ethics Unit',
     avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
-    assignedCaseIds: ['INC-892'],
+    assignedCaseIds: ['INC-892', 'INC-741', 'INC-650', 'INC-512'],
     conflictedCaseIds: []
   },
   {
@@ -84,4 +84,10 @@ export const DEMO_USERS: User[] = [
     assignedCaseIds: ['INC-741', 'INC-650'],
     conflictedCaseIds: []
   }
+];
+
+/** Accounts with access to the HR & Investigation dashboard to demonstrate patterns and witness quorum */
+export const DASHBOARD_ACCOUNTS: User[] = [
+  DEMO_USERS[0], // Sarah Jenkins (HR Reviewer - Pattern Intelligence & Triage)
+  DEMO_USERS[1]  // Elena Rostova (Lead Investigator - Witness Quorum & Evidence)
 ];

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { User, DEMO_USERS } from '../types/auth';
+import { User, DEMO_USERS, DASHBOARD_ACCOUNTS } from '../types/auth';
 import { ApiService } from '../services/api';
 
 interface AuthContextType {
   currentUser: User;
   allUsers: User[];
+  dashboardUsers: User[];
   switchUser: (userId: string) => void;
   canReviewChallenges: boolean;
   canManageQuorum: boolean;
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         currentUser,
         allUsers: DEMO_USERS,
+        dashboardUsers: DASHBOARD_ACCOUNTS,
         switchUser,
         canReviewChallenges,
         canManageQuorum,

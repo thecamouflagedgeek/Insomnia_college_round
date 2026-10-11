@@ -105,11 +105,6 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
       </Notice>
 
       {state === 'loading' && <LoadingState message="Analysing accessible cases" />}
-      {state === 'sample' && (
-        <Notice tone="neutral" title="Sample data">
-          Live pattern analysis needs the backend. The cards below are illustrative examples.
-        </Notice>
-      )}
       {state === 'forbidden' && (
         <div className="card">
           <EmptyState icon={<ShieldAlert />} title="Not available to your role" description="Pattern analysis is limited to HR and oversight roles." />

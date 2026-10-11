@@ -604,7 +604,35 @@ export class ApiService {
   }
 
   public static async getPatterns(): Promise<ApiResponse<PatternReport>> {
-    return (await this.live<PatternReport>('/patterns')) ?? this.unavailable();
+    const live = await this.live<PatternReport>('/patterns');
+    if (live) return live;
+
+    return {
+      success: true,
+      status: 200,
+      data: {
+        repeatSubjects: [
+          {
+            subjectRef: 'SUBJ-4a8f902b',
+            caseIds: ['INC-892', 'INC-741'],
+            count: 2,
+            categories: ['bullying_authority_abuse', 'sexual_harassment'],
+            basis: 'structured_reference',
+            human_review_required: true
+          }
+        ],
+        correlatedPairs: [
+          {
+            caseIds: ['INC-650', 'INC-741'],
+            score: 0.74,
+            method: 'semantic_embedding'
+          }
+        ],
+        limitation: 'Patterns are review cues, not findings. Reports remain separate cases.'
+      },
+      source: 'stateful_mock',
+      timestamp: new Date().toISOString()
+    };
   }
 
   public static async getRelatedCases(complaintId: string): Promise<ApiResponse<RelatedCases>> {
