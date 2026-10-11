@@ -54,12 +54,15 @@ void main() {
     session.addAttachment(
       const StoryAttachment('note.pdf', 50, '/private/note.pdf'),
     );
+    final baseline = (await container.read(repositoryProvider).reports()).length;
     await expectLater(
       session.submit(explicitlyConfirmed: false),
       throwsStateError,
     );
-    expect((await container.read(repositoryProvider).reports()).length, 1);
+    // An unconfirmed submit must not add a report; a confirmed one adds exactly one.
+    expect((await container.read(repositoryProvider).reports()).length, baseline);
     final report = await session.submit(explicitlyConfirmed: true);
+    expect((await container.read(repositoryProvider).reports()).length, baseline + 1);
     expect(report.description, exact);
     expect(report.suggestedCategories, ['Harassment', 'Bullying']);
     expect(report.files, ['note.pdf']);
@@ -106,6 +109,9 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(sessionProvider.notifier).enterDemo();
+      final baseline = (await tester.runAsync(
+        () => container.read(repositoryProvider).reports(),
+      ))!.length;
       container.read(routerProvider).go('/story');
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -144,14 +150,14 @@ void main() {
         (await tester.runAsync(
           () => container.read(repositoryProvider).reports(),
         ))!.length,
-        1,
+        baseline,
       );
       await tapText('Confirm and submit demo report');
       expect(
         (await tester.runAsync(
           () => container.read(repositoryProvider).reports(),
         ))!.length,
-        1,
+        baseline,
       );
       await tester.ensureVisible(find.byKey(const Key('story-confirm')));
       await tester.pumpAndSettle();
@@ -161,7 +167,7 @@ void main() {
       final reports = (await tester.runAsync(
         () => container.read(repositoryProvider).reports(),
       ))!;
-      expect(reports.length, 2);
+      expect(reports.length, baseline + 1);
       expect(reports.first.description, exact);
       expect(container.read(storyProvider).narrative, isEmpty);
       expect(tester.takeException(), isNull);

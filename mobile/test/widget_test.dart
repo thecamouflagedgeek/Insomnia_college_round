@@ -18,15 +18,22 @@ void main() {
   });
   test('Demo challenge cannot approve or reassign a committee', () async {
     final repository = DemoRepository();
-    final report = (await repository.reports()).first;
+    // A demo case with a seated committee and no challenge yet.
+    final report = (await repository.reports()).firstWhere(
+      (r) => r.challenges.isEmpty && r.status == 'Committee assigned',
+    );
+    final committee = report.committee.map((m) => m.id).toList();
     await repository.challenge(
       report,
-      'Member A',
+      committee.first,
       'Prior involvement',
       'A contextual explanation',
     );
-    expect(report.challenges.single.status, 'Submitted — demo');
+    final filed = report.challenges.single.status.toLowerCase();
+    expect(filed, contains('pending'));
+    expect(filed, isNot(anyOf(contains('approved'), contains('upheld'))));
     expect(report.status, 'Committee assigned');
+    expect(report.committee.map((m) => m.id).toList(), committee);
     final audit = await repository.audit(report);
     expect(audit.any((event) => event.state == 'Verified'), isFalse);
   });
