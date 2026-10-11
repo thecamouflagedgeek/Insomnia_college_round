@@ -74,11 +74,11 @@ export async function checkBackendHealth(baseUrl: string): Promise<boolean> {
 export class ApiService {
   private static user: User = DEMO_USERS[0]; // Default Sarah Jenkins
   private static apiBaseUrl: string = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  // Live by default: the integration stub (backend/app/stub, /hr/* routes) enforces access control server-side.
-  // VITE_FORCE_MOCK=true keeps the in-browser demo; if the backend is unreachable and VITE_USE_MOCK_FALLBACK is
-  // not 'false', calls fall back to the mock so the dashboard still renders.
+  // Live data only: the integration API (backend/app/stub, /hr/* routes) enforces access control server-side, and an
+  // unreachable backend surfaces as an error, never as substitute data. VITE_FORCE_MOCK=true runs the in-browser
+  // demo instead; VITE_USE_MOCK_FALLBACK=true (opt-in) falls back to it when the backend is unreachable.
   private static forceMock: boolean = import.meta.env.VITE_FORCE_MOCK === 'true';
-  private static mockFallback: boolean = import.meta.env.VITE_USE_MOCK_FALLBACK !== 'false';
+  private static mockFallback: boolean = import.meta.env.VITE_USE_MOCK_FALLBACK === 'true';
   private static stubAdminKey: string = import.meta.env.VITE_STUB_ADMIN_KEY || 'adm';
 
   public static setUser(user: User) {
@@ -620,11 +620,12 @@ export class ApiService {
       timestamp: now,
       actorRef: `${this.user.name} (${this.user.title})`,
       details: `Independent 3-member committee assigned to case ${complaintId}: ${memberIds.map(id => stateCommitteePool.find(m => m.id === id)?.name || id).join(', ')}.`,
-      sha256Proof: '8f2a93b41d2110c92bf5a19001124ae8092cc771124ae8092cc7719001124ae8',
-      merkleRoot: '0x9948201bc019248102948bc0192481029481092a18230bc71a80491823019bc0',
-      blockNumber: 62891420,
-      txHash: '0x1121bca01994afc09121a884efb204918230bc71a80418230bc71a8049182301',
-      verificationStatus: 'verified_commitment'
+      // Demo mode has no chain: no hashes, block or transaction are invented for this entry.
+      sha256Proof: '',
+      merkleRoot: '',
+      blockNumber: 0,
+      txHash: '',
+      verificationStatus: 'unavailable_verification_service'
     });
 
     return {
@@ -669,7 +670,7 @@ export class ApiService {
           {
             caseIds: ['INC-650', 'INC-741'],
             score: 0.74,
-            method: 'semantic_embedding'
+            method: 'token_jaccard_degraded'
           }
         ],
         limitation: 'Patterns are review cues, not findings. Reports remain separate cases.'

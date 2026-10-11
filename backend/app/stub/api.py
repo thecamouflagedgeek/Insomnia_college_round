@@ -159,22 +159,33 @@ def add_message(request: Request, case: Case, sender: str, text: str) -> Message
 
 def decide_challenge(request: Request, case: Case, ch: ChallengeRec, decision: str, reviewer_id: str,
                      rationale: str | None = None, replacement_id: str = DEFAULT_REPLACEMENT) -> None:
-    """decision: upheld | rejected. Upheld revokes the challenged member's access and seats a replacement."""
+    """decision: upheld | rejected. Upheld revokes the challenged member's access and seats a replacement when an
+    eligible one exists (not seated, not the challenged member, never someone removed from this case). Everything is
+    checked before anything changes, so a failure leaves the challenge pending."""
     if ch.status != "pending_review":
         raise HTTPException(409, {"reason": "already_decided"})
+    old = ch.member_id
+    seated = {m["member_id"] for m in case.committee}
+
+    def eligible(i: str) -> bool:
+        return (STAFF.get(i, {}).get("role") == "committee_member" and i not in seated and i != old
+                and i not in case.revoked_ids)
+
+    replacement: str | None = None
+    if decision == "upheld":
+        replacement = replacement_id if eligible(replacement_id) else next((i for i in STAFF if eligible(i)), None)
     ch.status, ch.reviewer_id, ch.rationale, ch.decided_at = decision, reviewer_id, rationale, now()
     audit = _chain(request).audit
     audit.record(case.case_id, "challenge_decided",
                  {"challenge_id": ch.challenge_id, "decision": decision, "reviewer_id": reviewer_id})
     if decision == "upheld":
-        old = ch.member_id
-        if replacement_id not in STAFF or replacement_id in {m["member_id"] for m in case.committee}:
-            replacement_id = next(i for i, s in STAFF.items() if s["role"] == "committee_member"
-                                  and i not in {m["member_id"] for m in case.committee} and i != old)
-        case.committee = [m for m in case.committee if m["member_id"] != old] + [committee_entry(replacement_id)]
+        case.committee = [m for m in case.committee if m["member_id"] != old]
+        if replacement:
+            case.committee.append(committee_entry(replacement))
         if old not in case.revoked_ids:
             case.revoked_ids.append(old)
-        audit.record(case.case_id, "member_replaced", {"old_member_id": old, "new_member_id": replacement_id})
+        if replacement:
+            audit.record(case.case_id, "member_replaced", {"old_member_id": old, "new_member_id": replacement})
         audit.record(case.case_id, "access_revoked", {"member_id": old})
 
 

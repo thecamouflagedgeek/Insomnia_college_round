@@ -261,17 +261,42 @@ def build_hr_router() -> APIRouter:
 
     @r.post("/cases/{case_id}/committee")
     def assign_committee(request: Request, case_id: str, body: CommitteeAssignIn, user: Staff = Depends(staff)):
-        c = _case_for(request, user, case_id)
+        """Seat a case committee. A seat must never route around the challenge process: members removed by an upheld
+        challenge, or facing a pending one, cannot be seated, and the committee is frozen while a challenge is open."""
         if user.role not in ("hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
+        c = _case_for(request, user, case_id)
+        ids = body.member_ids
+        if len(set(ids)) != len(ids):
+            raise HTTPException(422, {"reason": "duplicate_member", "message": "Each committee seat needs a different member."})
+        unknown = [i for i in ids if STAFF.get(i, {}).get("role") != "committee_member"]
+        if unknown:
+            raise HTTPException(422, {"reason": "not_committee_member",
+                                      "message": f"Not in the committee pool: {', '.join(unknown)}."})
         store = _store(request)
         with store.lock:
-            c.committee = [committee_entry(mid) for mid in body.member_ids if mid in STAFF]
+            if c.status in ("resolved", "closed"):
+                raise HTTPException(409, {"reason": "case_closed",
+                                          "message": f"Case {case_id} is closed; its committee can no longer change."})
+            pending = [ch for ch in c.challenges if ch.status == "pending_review"]
+            if pending:
+                raise HTTPException(409, {"reason": "challenge_pending",
+                                          "message": f"A challenge to {STAFF[pending[0].member_id]['name']} awaits independent "
+                                                     "review. The committee cannot change until it is decided."})
+            removed = [i for i in ids if i in c.revoked_ids]
+            if removed:
+                names = ", ".join(STAFF[i]["name"] for i in removed)
+                raise HTTPException(409, {"reason": "member_removed_by_challenge",
+                                          "message": f"{names} was removed from this case by an upheld challenge "
+                                                     "and cannot be seated again."})
+            c.committee = [committee_entry(mid) for mid in ids]
+            _chain(request).audit.record(c.case_id, "committee_assigned", {"committee_id": f"COM-{c.case_id}",
+                                                                           "member_ids": list(ids)})
             if c.status == "submitted":
+                _chain(request).audit.record(c.case_id, "status_changed", {"from": "submitted", "to": "committee_assigned"})
                 c.status = "committee_assigned"
-            _chain(request).audit.record(c.case_id, "committee_assigned", {"member_ids": body.member_ids})
             store.save()
-        return complaint_dto(request, c)
+        return complaint_dto(request, c, _chain(request).verifier.verify(case_id))
 
     @r.get("/cases/{case_id}/messages")
     def messages(request: Request, case_id: str, user: Staff = Depends(staff)):

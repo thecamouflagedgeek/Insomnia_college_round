@@ -4,14 +4,14 @@ from web3 import Web3
 
 from app.chain.anchorer import Anchorer
 from app.chain.audit_log import AuditLog
-from app.chain.audit_repo import InMemoryAuditRepository, PostgresAuditRepository
+from app.chain.audit_repo import AnchorRecord, AuditEvent, InMemoryAuditRepository, PostgresAuditRepository
 from app.chain.config import ChainSettings
 from app.chain.registry import AnchorTx, OnchainAnchor, RegistryClient
 from app.chain.semaphore import AddedMember, SemaphoreClient
 from app.chain.services import ChainServices
 from app.chain.verifier import CaseVerifier
 from app.chain.web3_client import TxSender, make_w3
-from app.chain.zk_repo import InMemoryZkRepository, PostgresZkRepository
+from app.chain.zk_repo import InMemoryZkRepository, Member, PostgresZkRepository
 from app.chain.zk_service import ZkService
 from app.stub.store import StubStore
 
@@ -63,6 +63,49 @@ class OfflineRegistry:
         return list(self.store.get(case_key_hex, []))
 
 
+class _SavingAnchorer(Anchorer):
+    """Saves the stub store after a sweep that anchored something, so a restart keeps the anchors."""
+
+    def __init__(self, repo, registry, store: StubStore):
+        super().__init__(repo, registry)
+        self._store = store
+
+    def run_once(self):
+        done = super().run_once()
+        if done:
+            self._store.save()
+        return done
+
+
+def _persist_offline_chain(store: StubStore, semaphore: OfflineSemaphore, registry: OfflineRegistry,
+                           zk_repo: InMemoryZkRepository, audit_repo: InMemoryAuditRepository) -> None:
+    """Offline mode keeps the chain in memory; mirror it into the (encrypted) state file next to the cases, so the
+    audit history, used nullifiers and anchors survive a restart together with the cases they belong to."""
+
+    def dump() -> dict:
+        with zk_repo._lock, audit_repo._lock:
+            return {
+                "members": list(semaphore.members), "used": list(semaphore.used),
+                "anchors": {k: [[a.seq, a.head, a.timestamp] for a in v] for k, v in registry.store.items()},
+                "zk_members": [vars(m) for m in zk_repo._members.values()],
+                "nullifiers": [[n, *v] for n, v in zk_repo._nullifiers.items()],
+                "events": {c: [vars(e) for e in evs] for c, evs in audit_repo._events.items()},
+                "records": {c: [vars(r) for r in rs] for c, rs in audit_repo._anchors.items()},
+            }
+
+    def load(d: dict) -> None:
+        semaphore.members = list(d["members"])
+        semaphore.used = set(d["used"])
+        registry.store = {k: [OnchainAnchor(seq=a[0], head=a[1], timestamp=a[2]) for a in v]
+                          for k, v in d["anchors"].items()}
+        zk_repo._members = {m["index"]: Member(**m) for m in d["zk_members"]}
+        zk_repo._nullifiers = {n[0]: tuple(n[1:]) for n in d["nullifiers"]}
+        audit_repo._events = {c: [AuditEvent(**e) for e in evs] for c, evs in d["events"].items()}
+        audit_repo._anchors = {c: [AnchorRecord(**r) for r in rs] for c, rs in d["records"].items()}
+
+    store.attach("offline_chain", dump, load)
+
+
 def build_stub_services(settings: ChainSettings, store: StubStore, offline: bool) -> ChainServices:
     """live: real Semaphore group + CaseAuditRegistry, Postgres for nullifiers/audit (DATABASE_URL required, because
     the on-chain group outlives the process). offline: everything in memory."""
@@ -70,6 +113,8 @@ def build_stub_services(settings: ChainSettings, store: StubStore, offline: bool
         semaphore, registry = OfflineSemaphore(), OfflineRegistry()
         zk_repo, audit_repo = InMemoryZkRepository(), InMemoryAuditRepository()
         group_id = settings.group_id or 0
+        if store.persistent:
+            _persist_offline_chain(store, semaphore, registry, zk_repo, audit_repo)
     else:
         if not settings.database_url or settings.group_id is None:
             raise RuntimeError("CHAIN_MODE=live needs DATABASE_URL and SEMAPHORE_GROUP_ID")
@@ -85,6 +130,6 @@ def build_stub_services(settings: ChainSettings, store: StubStore, offline: bool
         zk=ZkService(semaphore, zk_repo, group_id),
         audit=AuditLog(audit_repo),
         verifier=CaseVerifier(audit_repo, registry, loaders, settings.explorer_tx_url),
-        anchorer=Anchorer(audit_repo, registry),
+        anchorer=_SavingAnchorer(audit_repo, registry, store),
         settings=settings,
     )

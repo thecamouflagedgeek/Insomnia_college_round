@@ -135,15 +135,27 @@ class StubStore:
         self._lock = threading.RLock()
         self.cases: dict[str, Case] = {}
         self.invitations: dict[str, Invitation] = {}
+        # Extra state saved in the same file (offline chain: audit log, nullifiers, anchors), sealed as one field.
+        self._extensions: dict[str, tuple] = {}
+        self._pending_ext: dict[str, str] = {}
         if self._path and self._path.exists():
             self._load()
+
+    def attach(self, name: str, dump, load) -> None:
+        """Persist dump() under `name`; a value already in the state file is handed to load() right away."""
+        self._extensions[name] = (dump, load)
+        if name in self._pending_ext:
+            load(json.loads(self._crypto.decrypt_field(EncryptedField(self._pending_ext.pop(name), f"ext:{name}:state"),
+                                                       "ext", name, "state")))
 
     def save(self) -> None:
         if not self._path:
             return
         with self._lock:
             data = {"cases": [self._seal(asdict(c)) for c in self.cases.values()],
-                    "invitations": [asdict(i) for i in self.invitations.values()]}
+                    "invitations": [asdict(i) for i in self.invitations.values()],
+                    "extensions": {name: self._crypto.encrypt_field(json.dumps(dump()), "ext", name, "state").ciphertext
+                                   for name, (dump, _) in self._extensions.items()}}
             tmp = self._path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data))
             os.replace(tmp, self._path)
@@ -158,6 +170,7 @@ class StubStore:
             self.cases[c["case_id"]] = Case(**c)
         for i in data.get("invitations", []):
             self.invitations[i["invitation_id"]] = Invitation(**i)
+        self._pending_ext = dict(data.get("extensions", {}))
 
     # Sensitive fields are encrypted in the state file and plaintext only in memory.
     def _enc(self, value: str, case_id: str, name: str) -> str:
@@ -186,6 +199,10 @@ class StubStore:
 
     def _open(self, c: dict) -> dict:
         return self._transform(c, self._dec)
+
+    @property
+    def persistent(self) -> bool:
+        return self._path is not None
 
     @property
     def lock(self) -> threading.RLock:

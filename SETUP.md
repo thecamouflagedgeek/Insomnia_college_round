@@ -20,7 +20,19 @@ Windows (PowerShell): use `.venv\Scripts\pip` / `..\.venv\Scripts\uvicorn`, and 
 
 Check it: open http://127.0.0.1:8000/docs.
 
-Offline mode accepts proofs without checking them cryptographically and keeps state in memory, so it is for UI work only.
+Offline mode accepts proofs without checking them cryptographically, so it is not a demo of anonymity.
+
+To keep data across restarts, add an encrypted state file (keep it outside the repo):
+
+```bash
+mkdir -p ~/.incognito
+python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())" > ~/.incognito/stub.key
+CHAIN_MODE=offline STUB_ADMIN_KEY=adm STUB_STATE_PATH=$HOME/.incognito/stub_state.json \
+  ENCRYPTION_KEY=$(cat ~/.incognito/stub.key) ../.venv/bin/uvicorn app.stub.main:app --host 127.0.0.1 --port 8000
+```
+
+Cases, the audit log, used nullifiers and anchors are then saved together, with report text and evidence encrypted
+(AES-256-GCM). Losing the key makes the file unreadable.
 Cases appear once reports are filed from the mobile app (enrolment code `DEMO-INVITE`).
 Live mode (`CHAIN_MODE=live`) needs the repo-root `.env` filled from `.env.example`, plus `DATABASE_URL`; never commit `.env`.
 
@@ -34,9 +46,10 @@ npm install
 VITE_API_BASE_URL=http://localhost:8000 VITE_STUB_ADMIN_KEY=adm npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open http://127.0.0.1:5173. The badge in the top bar shows **Live backend** when it reaches the API.
+Open http://127.0.0.1:5173.
 `VITE_STUB_ADMIN_KEY` must match the backend's `STUB_ADMIN_KEY`.
 
-No backend? Run `VITE_FORCE_MOCK=true npm run dev` for the built-in demo data (badge shows **Demo data**).
+The dashboard shows live backend data only; if the backend is down, pages show an error with Retry.
+For the old in-browser demo data instead, run `VITE_FORCE_MOCK=true npm run dev`.
 
 Other commands in `web/`: `npm run build`, `npm run lint`.
