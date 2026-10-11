@@ -62,7 +62,14 @@ def send_investigation_message(report_reference: str, body: str, thread_token: s
         db.test_insert("investigation_messages", test_record)
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production persistence not yet implemented")
+        row = {
+            "id": message_id,
+            "case_id": report_reference,
+            "sender": "investigator",
+            "encrypted_body": encrypted_body.ciphertext,
+            "body_aad": encrypted_body.associated_data,
+        }
+        client.table("investigation_messages").insert(row).execute()
 
     return CreatedMessage(
         message_id=message_id,
@@ -73,15 +80,7 @@ def send_investigation_message(report_reference: str, body: str, thread_token: s
 
 
 def list_investigation_messages(report_reference: str, db: Database | None = None) -> list[CreatedMessage]:
-    """List all messages for a report (after authorization check).
-
-    Args:
-        report_reference: The report to get messages for
-        db: Optional database instance
-
-    Returns:
-        List of CreatedMessage objects
-    """
+    """List all messages for a report (after authorization check)."""
     if db is None:
         settings = get_settings()
         db = Database.from_settings(settings)
@@ -106,7 +105,21 @@ def list_investigation_messages(report_reference: str, db: Database | None = Non
         return messages
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production retrieval not yet implemented")
+        res = client.table("investigation_messages").select("*").eq("case_id", report_reference).order("created_at", desc=False).execute()
+        messages = []
+        for row in res.data or []:
+            encrypted_body = EncryptedField(
+                ciphertext=row["encrypted_body"],
+                associated_data=row.get("body_aad", ""),
+            )
+            created_ts = int(time.time())
+            messages.append(CreatedMessage(
+                message_id=row["id"],
+                report_reference=row["case_id"],
+                encrypted_body=encrypted_body,
+                created_at=created_ts,
+            ))
+        return messages
 
 
 def decrypt_message_body(message: CreatedMessage) -> str:

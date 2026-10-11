@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Lock, MessageSquare, RefreshCw, Send } from 'lucide-react';
+import { useAutoRefresh, refreshDashboard } from '../../hooks/useAutoRefresh';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { Notice } from '../ui/Notice';
@@ -23,9 +24,10 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   const [isDemo, setIsDemo] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = async () => {
+  const loadMessages = async (isCurrent = () => true) => {
     setAccessError(null);
     const res = await ApiService.getMessages(complaintId);
+    if (!isCurrent()) return;
     setIsDemo(res.source === 'stateful_mock');
     if (res.success && res.data) setMessages(res.data);
     else {
@@ -34,14 +36,12 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
     }
   };
 
-  useEffect(() => {
-    setMessages(null);
-    setSendError(null);
-    loadMessages();
-    const timer = setInterval(() => {
-      loadMessages();
-    }, 4000);
-    return () => clearInterval(timer);
+  useAutoRefresh((isCurrent, initial) => {
+    if (initial) {
+      setMessages(null);
+      setSendError(null);
+    }
+    return loadMessages(isCurrent);
   }, [complaintId, currentUser.id]);
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
     setSending(false);
     if (res.success) {
       setInputText('');
-      loadMessages();
+      refreshDashboard();
     } else {
       // Keep the draft so nothing is lost.
       setSendError(res.error || 'The message was not sent.');
@@ -83,7 +83,7 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
           </h2>
           <p className="text-xs text-muted">The reporter replies from the INCOGNITO app. Their identity is never shown here.</p>
         </div>
-        <button className="icon-btn h-9 w-9 shrink-0" onClick={loadMessages} aria-label="Refresh messages" title="Refresh">
+        <button className="icon-btn h-9 w-9 shrink-0" onClick={() => loadMessages()} aria-label="Refresh messages" title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </button>
       </header>

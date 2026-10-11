@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useAutoRefresh } from './hooks/useAutoRefresh';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { NavPage, pageFromHash, hashFor } from './components/layout/nav';
@@ -42,22 +43,23 @@ function AppContent() {
   }, []);
 
   // Start on the newest case this user can access (live ids replace the mock's INC-892).
-  useEffect(() => {
-    ApiService.getReports().then((res) => {
-      const first = res.data?.[0]?.id;
-      if (first) setSelectedCaseId((cur) => cur || first);
-    });
+  useAutoRefresh(async (isCurrent) => {
+    const res = await ApiService.getReports();
+    if (!isCurrent()) return;
+    const first = res.data?.[0]?.id;
+    if (first) setSelectedCaseId((cur) => cur || first);
   }, [currentUser.id]);
+
   const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(0);
 
   // Monitor challenges to update badge dynamically
-  useEffect(() => {
-    ApiService.getChallenges().then((res) => {
-      if (res.data) {
-        const pending = res.data.filter((c) => c.status === 'pending_independent_review').length;
-        setPendingChallengesCount(pending);
-      }
-    });
+  useAutoRefresh(async (isCurrent) => {
+    const res = await ApiService.getChallenges();
+    if (!isCurrent()) return;
+    if (res.data) {
+      const pending = res.data.filter((c) => c.status === 'pending_independent_review').length;
+      setPendingChallengesCount(pending);
+    }
   }, [currentUser.id, currentPage]);
 
   const handleNavigate = (page: NavPage, caseId?: string) => {

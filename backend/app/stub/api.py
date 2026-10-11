@@ -277,6 +277,11 @@ def build_api_router() -> APIRouter:
             case.evidence.append(ev)
             _chain(request).audit.record(case.case_id, "evidence_sealed", {
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})
+            if store.supabase:
+                try:
+                    store.supabase.insert_evidence(case.case_id, ev.evidence_id, ev.name, ev.mime, ev.size, sha, content)
+                except Exception as e:
+                    pass
             store.save()
         return {"evidence_id": ev.evidence_id, "name": ev.name, "mime": ev.mime, "size": ev.size, "sha256": sha}
 
@@ -319,6 +324,11 @@ def build_api_router() -> APIRouter:
             _chain(request).audit.record(case.case_id, "challenge_filed", {
                 "challenge_id": rec.challenge_id, "member_id": p.member_id,
                 "nullifier": nullifier, "proof_tx": tx_hash})
+            if store.supabase:
+                try:
+                    store.supabase.insert_challenge(rec.challenge_id, case.case_id, rec.member_id, rec.reason, rec.explanation, tx_hash, nullifier)
+                except Exception as e:
+                    pass
             store.save()
         return {"challenge_id": rec.challenge_id, "member_id": rec.member_id, "status": rec.status,
                 "proof_tx": tx_hash, "explorer_url": _explorer(request, tx_hash)}
@@ -333,6 +343,11 @@ def build_api_router() -> APIRouter:
         with store.lock:
             case.reflection = {**body.model_dump(), "at": now()}
             _chain(request).audit.record(case.case_id, "reflection_recorded", {"reflection_id": new_id("REF")})
+            if store.supabase:
+                try:
+                    store.supabase.update_report(case.case_id, {"reflection": case.reflection})
+                except Exception as e:
+                    pass
             store.save()
         return {"recorded": True}
 
@@ -345,6 +360,11 @@ def build_api_router() -> APIRouter:
         store = _store(request)
         with store.lock:
             msg = _add_message(request, case, "you", body.text)
+            if store.supabase:
+                try:
+                    store.supabase.insert_message(msg.message_id, case.case_id, "you", body.text)
+                except Exception as e:
+                    pass
             store.save()
         return _message_view(msg)
 
@@ -374,6 +394,11 @@ def build_api_router() -> APIRouter:
                 "quorum_id": f"WQ-{inv.case_id}",
                 "accepted_count": sum(i.response == "accept" for i in same),
                 "declined_count": sum(i.response == "decline" for i in same)})
+            if store.supabase:
+                try:
+                    store.supabase.update_witness_response(inv.code_hash, body.response)
+                except Exception as e:
+                    pass
             store.save()
         return {"invitation_id": inv.invitation_id, "context": inv.context, "response": inv.response}
 

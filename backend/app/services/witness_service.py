@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from uuid import uuid4
 from dataclasses import dataclass
 from typing import Any
@@ -69,7 +70,17 @@ def create_witness_invitation(report_reference: str, contact: str, ttl_seconds: 
         db.test_insert("witness_invitations", test_record)
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production persistence not yet implemented")
+        row = {
+            "id": invitation_id,
+            "case_id": report_reference,
+            "code": digest,
+            "role_alias": "Witness",
+            "encrypted_contact": encrypted_contact.ciphertext,
+            "contact_aad": encrypted_contact.associated_data,
+            "status": "pending",
+            "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+        }
+        client.table("witness_invitations").insert(row).execute()
 
     return CreatedWitnessInvitation(
         invitation_id=invitation_id,
@@ -81,16 +92,7 @@ def create_witness_invitation(report_reference: str, contact: str, ttl_seconds: 
 
 
 def validate_witness_token(token: str, invitation_id: str, db: Database | None = None) -> tuple[bool, str | None]:
-    """Validate a witness invitation token and return contact if valid.
-
-    Args:
-        token: The raw token provided by the witness
-        invitation_id: The invitation identifier
-        db: Optional database instance
-
-    Returns:
-        Tuple of (is_valid, contact_or_none)
-    """
+    """Validate a witness invitation token and return contact if valid."""
     if db is None:
         settings = get_settings()
         db = Database.from_settings(settings)
@@ -119,7 +121,22 @@ def validate_witness_token(token: str, invitation_id: str, db: Database | None =
         return False, None
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production retrieval not yet implemented")
+        res = client.table("witness_invitations").select("*").eq("id", invitation_id).execute()
+        if not res.data:
+            return False, None
+        row = res.data[0]
+        stored_digest = row.get("code", "")
+        if not digest_matches(token, stored_digest):
+            return False, None
+        if not row.get("encrypted_contact"):
+            return True, None
+        encryption_service = get_encryption_service()
+        encrypted_contact = EncryptedField(
+            ciphertext=row["encrypted_contact"],
+            associated_data=row.get("contact_aad", ""),
+        )
+        contact = encryption_service.decrypt_witness_contact(invitation_id, encrypted_contact)
+        return True, contact
 
 
 # Backward compatibility functions for existing tests

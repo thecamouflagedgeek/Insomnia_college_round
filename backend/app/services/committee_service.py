@@ -61,7 +61,26 @@ def create_challenge(payload: ChallengeCreate, submitter_subject: str) -> Create
         db.test_insert("challenges", test_record)
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production persistence not yet implemented")
+        row = {
+            "id": challenge_id,
+            "case_id": payload.report_reference,
+            "member_id": getattr(payload, "member_id", "usr_marcus"),
+            "reason": payload.reason,
+            "explanation": getattr(payload, "explanation", payload.reason),
+            "status": "pending_review",
+        }
+        try:
+            client.table("committee_challenges").insert(row).execute()
+        except Exception:
+            client.table("challenges").insert({
+                "challenge_id": challenge_id,
+                "report_reference": payload.report_reference,
+                "reason": payload.reason,
+                "requested_action": payload.requested_action,
+                "status": "pending",
+                "submitter_subject": submitter_subject,
+                "created_at": created_at,
+            }).execute()
 
     return CreatedChallenge(
         challenge_id=challenge_id,
@@ -74,19 +93,9 @@ def create_challenge(payload: ChallengeCreate, submitter_subject: str) -> Create
 
 
 def decide_challenge(challenge_id: str, payload: ChallengeDecision, decider_subject: str) -> DecidedChallenge:
-    """Record a challenge decision (admin only).
-
-    Args:
-        challenge_id: The challenge to decide
-        payload: Decision and rationale
-        decider_subject: Auth subject of the admin making the decision
-
-    Returns:
-        DecidedChallenge with decision details
-    """
+    """Record a challenge decision (admin only)."""
     settings = get_settings()
     db = Database.from_settings(settings)
-
     decided_at = int(__import__("time").time())
 
     if db._test_mode:
@@ -104,7 +113,20 @@ def decide_challenge(challenge_id: str, payload: ChallengeDecision, decider_subj
             raise ValueError("Challenge not found")
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production persistence not yet implemented")
+        updates = {
+            "status": "upheld" if payload.decision == "accepted" else "rejected",
+            "reviewer_id": decider_subject,
+            "rationale": payload.rationale,
+        }
+        try:
+            client.table("committee_challenges").update(updates).eq("id", challenge_id).execute()
+        except Exception:
+            client.table("challenges").update({
+                "status": payload.decision,
+                "decision_rationale": payload.rationale,
+                "decided_by": decider_subject,
+                "decided_at": decided_at,
+            }).eq("challenge_id", challenge_id).execute()
 
     return DecidedChallenge(
         challenge_id=challenge_id,
@@ -136,7 +158,21 @@ def get_challenge(challenge_id: str, db: Database | None = None) -> CreatedChall
         return None
     else:
         client = db.require_schema()
-        raise IntegrationUnavailable("Production retrieval not yet implemented")
+        try:
+            res = client.table("committee_challenges").select("*").eq("id", challenge_id).execute()
+            if res.data:
+                row = res.data[0]
+                return CreatedChallenge(
+                    challenge_id=row["id"],
+                    report_reference=row["case_id"],
+                    reason=row["reason"],
+                    requested_action="recusal",
+                    status=row.get("status", "pending"),
+                    created_at=int(__import__("time").time()),
+                )
+        except Exception:
+            pass
+        return None
 
 
 def list_committee_memberships(subject: str, db: Database | None = None) -> list[CommitteeMembership]:

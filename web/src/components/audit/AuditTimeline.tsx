@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { ChevronDown, History, RefreshCw } from 'lucide-react';
 import { AuditEvent } from '../../types/audit';
 import { ApiService } from '../../services/api';
@@ -19,17 +20,20 @@ export function AuditTimeline({ complaintId }: { complaintId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const load = async () => {
-    setError(null);
-    setEvents(null);
+  const load = async (silent = false, isCurrent = () => true) => {
+    if (!silent) {
+      setError(null);
+      setEvents(null);
+    }
     const res = await ApiService.getAuditEvents(complaintId);
+    if (!isCurrent()) return;
     if (res.success && res.data) setEvents(res.data);
-    else setError(res.error || 'Audit trail unavailable');
+    else if (!silent) setError(res.error || 'Audit trail unavailable');
   };
 
-  useEffect(() => {
-    setExpanded(false);
-    load();
+  useAutoRefresh((isCurrent, initial) => {
+    if (initial) setExpanded(false);
+    return load(!initial, isCurrent);
   }, [complaintId, currentUser.id]);
 
   const ordered = events ? [...events].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) : [];
@@ -42,7 +46,7 @@ export function AuditTimeline({ complaintId }: { complaintId: string }) {
       title="Silent Audit trail"
       description="Append-only, hash-chained record of every action on this case."
       action={
-        <button className="icon-btn h-8 w-8" onClick={load} aria-label="Refresh audit trail" title="Refresh">
+        <button className="icon-btn h-8 w-8" onClick={() => load()} aria-label="Refresh audit trail" title="Refresh">
           <RefreshCw className={`h-4 w-4 ${events === null && !error ? 'animate-spin' : ''}`} />
         </button>
       }

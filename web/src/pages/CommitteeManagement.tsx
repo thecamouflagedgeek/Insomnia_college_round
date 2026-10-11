@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, Scale, UserX, Users } from 'lucide-react';
 import { CommitteePoolId, COMMITTEE_POOLS, CommitteeMemberRecord, CommitteeChallenge } from '../types/committee';
 import { ApiService } from '../services/api';
@@ -41,8 +42,9 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
   const challengesRef = useRef<HTMLDivElement>(null);
 
   // Open on the pool that holds a pending challenge, so a live challenge is never hidden behind the default pool.
-  const loadAllChallenges = async () => {
+  const loadAllChallenges = async (isCurrent = () => true) => {
     const res = await ApiService.getChallenges();
+    if (!isCurrent()) return;
     const list = res.data ?? [];
     setAllChallenges(list);
     setSelectedPoolId(
@@ -50,37 +52,22 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
     );
   };
 
-  const loadPoolData = async (poolId: CommitteePoolId, silent = false) => {
+  const loadPoolData = async (poolId: CommitteePoolId, silent = false, isCurrent = () => true) => {
     if (!silent) setLoading(true);
     const [membersRes, challengesRes] = await Promise.all([
       ApiService.getCommitteePool(poolId),
       ApiService.getChallenges(poolId)
     ]);
+    if (!isCurrent()) return;
     setMembers(membersRes.data ?? []);
     setChallenges(challengesRes.data ?? []);
     if (!silent) setLoading(false);
   };
 
-  useEffect(() => {
-    loadAllChallenges();
-    const timer = setInterval(() => {
-      loadAllChallenges();
-      if (selectedPoolId) loadPoolData(selectedPoolId, true);
-    }, 5000);
-    const handleFocus = () => {
-      loadAllChallenges();
-      if (selectedPoolId) loadPoolData(selectedPoolId, true);
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [currentUser.id, selectedPoolId]);
-
-  useEffect(() => {
-    if (selectedPoolId) loadPoolData(selectedPoolId);
-  }, [selectedPoolId, currentUser.id]);
+  useAutoRefresh((isCurrent) => loadAllChallenges(isCurrent), [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => {
+    if (selectedPoolId) return loadPoolData(selectedPoolId, !initial, isCurrent);
+  }, [selectedPoolId ?? '', currentUser.id]);
 
   const refresh = () => {
     loadAllChallenges();

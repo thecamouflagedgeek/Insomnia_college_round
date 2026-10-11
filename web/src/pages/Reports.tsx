@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FolderOpen, RefreshCw, SearchX } from 'lucide-react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Complaint } from '../types/complaint';
 import { ApiService } from '../services/api';
 import { ComplaintTable } from '../components/complaints/ComplaintTable';
@@ -25,30 +26,20 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  const loadReports = async (silent: boolean | unknown = false) => {
+  const loadReports = async (silent: boolean | unknown = false, isCurrent: () => boolean = () => true) => {
     const isSilent = silent === true;
     if (!isSilent) {
       setLoading(true);
       setError(null);
     }
     const res = await ApiService.getReports();
+    if (!isCurrent()) return;
     if (res.success && res.data) setComplaints(res.data);
     else if (!isSilent) setError(res.error || 'Could not load complaints.');
     if (!isSilent) setLoading(false);
   };
 
-  useEffect(() => {
-    loadReports();
-    const timer = setInterval(() => {
-      loadReports(true);
-    }, 5000);
-    const handleFocus = () => loadReports(true);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => loadReports(!initial, isCurrent), [currentUser.id]);
 
   const clearFilters = () => {
     setSearchQuery('');

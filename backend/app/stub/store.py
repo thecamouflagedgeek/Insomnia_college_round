@@ -1,14 +1,18 @@
 import base64
 import hashlib
 import json
+import logging
 import os
 import secrets
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from app.services.encryption_service import EncryptedField, EncryptionService
+
+logger = logging.getLogger("incognito.store")
 
 # Staff directory: the same people as the HR dashboard's demo users (web/src/types/auth.ts), so a staff member's
 # id means the same thing in the app, the dashboard and the audit trail. M2's real auth replaces this.
@@ -141,32 +145,57 @@ class Case:
 
 
 class StubStore:
-    """Process-local workflow state, optionally mirrored to a JSON file so a restart keeps cases whose audit
-    events already live in Postgres/on-chain. Never stores reporter identity: only a hash of the case token."""
+    """Canonical workflow state store. Persists to real Supabase database when configured,
+    and mirrors to an encrypted AES-256 state file in development/demo mode so restarts keep cases
+    whose audit events live in Postgres/on-chain."""
 
-    def __init__(self, path: str | None = None, encryption_key: bytes | None = None, seed_demo: bool = True):
+    def __init__(self, path: str | None = None, encryption_key: bytes | None = None, seed_demo: bool = True, supabase: Any | None = None):
         self._path = Path(path) if path else None
         if self._path and encryption_key is None:
             raise RuntimeError("STUB_STATE_PATH needs ENCRYPTION_KEY: the state file holds report content")
-        # M3's AES-256-GCM service; each field is bound to its record and field name (associated data).
+        # AES-256-GCM service; each field is bound to its record and field name (associated data).
         self._crypto = EncryptionService(encryption_key) if encryption_key else None
         self._lock = threading.RLock()
         self.cases: dict[str, Case] = {}
         self.invitations: dict[str, Invitation] = {}
+        self._extensions: dict[str, tuple] = {}
+        self._pending_ext: dict[str, str] = {}
+        self.supabase = supabase
+
+        # Load from disk if state file exists
         if self._path and self._path.exists():
             self._load()
+
+        # Load canonical records from Supabase if connected
+        if self.supabase:
+            self._load_from_supabase()
+
         if not self.cases and seed_demo:
             self._seed()
-            if self._path:
+            if self._path or self.supabase:
                 self.save()
 
     @property
     def is_durable(self) -> bool:
-        return self._path is not None and self._crypto is not None
+        return self.supabase is not None or (self._path is not None and self._crypto is not None)
+
+    @property
+    def persistent(self) -> bool:
+        return self.supabase is not None or self._path is not None
 
     @property
     def path(self) -> Path | None:
         return self._path
+
+    def attach(self, name: str, dump, load) -> None:
+        """Persist dump() under `name`; a value already in the state file is handed to load() right away."""
+        self._extensions[name] = (dump, load)
+        if name in self._pending_ext and self._crypto:
+            try:
+                load(json.loads(self._crypto.decrypt_field(EncryptedField(self._pending_ext.pop(name), f"ext:{name}:state"),
+                                                           "ext", name, "state")))
+            except Exception:
+                pass
 
     def _seed(self) -> None:
         c892 = Case(
@@ -261,11 +290,25 @@ class StubStore:
         }
 
     def save(self) -> None:
-        if not self._path:
-            return
         with self._lock:
-            data = {"cases": [self._seal(asdict(c)) for c in self.cases.values()],
-                    "invitations": [asdict(i) for i in self.invitations.values()]}
+            if self.supabase:
+                try:
+                    self._sync_all_to_supabase()
+                except Exception as e:
+                    logger.error("Failed to sync store to Supabase: %s", e)
+
+            if not self._path:
+                return
+
+            data = {
+                "cases": [self._seal(asdict(c)) for c in self.cases.values()],
+                "invitations": [asdict(i) for i in self.invitations.values()],
+            }
+            if self._crypto and self._extensions:
+                data["extensions"] = {
+                    name: self._crypto.encrypt_field(json.dumps(dump()), "ext", name, "state").ciphertext
+                    for name, (dump, _) in self._extensions.items()
+                }
             tmp = self._path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data))
             os.replace(tmp, self._path)
@@ -280,6 +323,128 @@ class StubStore:
             self.cases[c["case_id"]] = Case(**c)
         for i in data.get("invitations", []):
             self.invitations[i["invitation_id"]] = Invitation(**i)
+        self._pending_ext = dict(data.get("extensions", {}))
+
+    def _load_from_supabase(self) -> None:
+        if not self.supabase:
+            return
+        try:
+            reports = self.supabase.list_reports()
+            for r in reports:
+                cid = r["case_id"]
+                ev_list = []
+                for e in self.supabase.list_evidence(cid):
+                    ev_list.append(Evidence(
+                        evidence_id=e.get("id", ""),
+                        name=e.get("name", ""),
+                        mime=e.get("mime", ""),
+                        size=e.get("size", 0),
+                        sha256=e.get("sha256", ""),
+                        content_b64="",
+                    ))
+                ch_list = []
+                for ch in self.supabase.list_challenges(cid):
+                    ch_list.append(ChallengeRec(
+                        challenge_id=ch.get("id", ""),
+                        member_id=ch.get("member_id", ""),
+                        reason=ch.get("reason", ""),
+                        explanation=ch.get("explanation", ""),
+                        status=ch.get("status", "pending_review"),
+                        proof_tx=ch.get("proof_tx", ""),
+                        decided_at=ch.get("decided_at"),
+                        reviewer_id=ch.get("reviewer_id"),
+                        rationale=ch.get("rationale"),
+                    ))
+                msg_list = []
+                for m in self.supabase.list_messages(cid):
+                    msg_list.append(Message(
+                        message_id=m.get("message_id", ""),
+                        sender=m.get("sender", "investigator"),
+                        text=m.get("text", ""),
+                        at=m.get("at", now()),
+                    ))
+
+                self.cases[cid] = Case(
+                    case_id=cid,
+                    token_hash=r.get("token_hash", ""),
+                    raw_payload=json.dumps(r.get("payload", {})),
+                    status=r.get("status", "submitted"),
+                    created_at=r.get("created_at", now()),
+                    investigator_id=r.get("investigator_id", DEFAULT_INVESTIGATOR),
+                    committee=[committee_entry(m["member_id"] if isinstance(m, dict) else m) for m in r.get("committee", [])],
+                    revoked_ids=list(r.get("revoked_ids", [])),
+                    nullifier=r.get("nullifier", ""),
+                    proof_tx=r.get("proof_tx", ""),
+                    severity=r.get("severity") or {},
+                    integrity_flags=list(r.get("integrity_flags", [])),
+                    resolution=r.get("resolution"),
+                    reflection=r.get("reflection"),
+                    evidence=ev_list,
+                    challenges=ch_list,
+                    messages=msg_list,
+                )
+
+            for inv in self.supabase.list_witness_invitations():
+                self.invitations[inv["id"]] = Invitation(
+                    invitation_id=inv["id"],
+                    case_id=inv["case_id"],
+                    code_hash=inv.get("code", ""),
+                    statement=inv.get("role_alias", ""),
+                    response="accept" if inv.get("status") == "accepted" else ("decline" if inv.get("status") == "declined" else None),
+                    alias=inv.get("role_alias", ""),
+                    invited_at=inv.get("created_at", now()),
+                    responded_at=inv.get("responded_at"),
+                )
+        except Exception as e:
+            logger.error("Failed to load records from Supabase: %s", e)
+
+    def _sync_all_to_supabase(self) -> None:
+        if not self.supabase:
+            return
+        for c in self.cases.values():
+            try:
+                existing = self.supabase.get_report(c.case_id)
+                if not existing:
+                    self.supabase.insert_report({
+                        "case_id": c.case_id,
+                        "token_hash": c.token_hash,
+                        "payload": c.payload,
+                        "status": c.status,
+                        "created_at": c.created_at,
+                        "investigator_id": c.investigator_id,
+                        "committee": c.committee,
+                        "revoked_ids": c.revoked_ids,
+                        "severity": c.severity,
+                        "integrity_flags": c.integrity_flags,
+                        "nullifier": c.nullifier,
+                        "proof_tx": c.proof_tx,
+                        "resolution": c.resolution,
+                        "reflection": c.reflection,
+                    })
+                else:
+                    self.supabase.update_report(c.case_id, {
+                        "status": c.status,
+                        "committee": c.committee,
+                        "revoked_ids": c.revoked_ids,
+                        "severity": c.severity,
+                        "resolution": c.resolution,
+                        "reflection": c.reflection,
+                    })
+            except Exception as e:
+                logger.error("Error syncing case %s to Supabase: %s", c.case_id, e)
+
+        for i in self.invitations.values():
+            try:
+                existing_inv = self.supabase.get_witness_invitation_by_code(i.code_hash)
+                if not existing_inv:
+                    self.supabase.insert_witness_invitation(
+                        invitation_id=i.invitation_id,
+                        case_id=i.case_id,
+                        code=i.code_hash,
+                        role_alias=i.alias,
+                    )
+            except Exception as e:
+                logger.error("Error syncing invitation %s to Supabase: %s", i.invitation_id, e)
 
     # Sensitive fields are encrypted in the state file and plaintext only in memory.
     def _enc(self, value: str, case_id: str, name: str) -> str:

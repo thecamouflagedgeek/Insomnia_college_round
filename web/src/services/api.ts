@@ -1,3 +1,4 @@
+import { refreshDashboard } from '../hooks/useAutoRefresh';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge, CommitteeMemberRecord, CommitteePoolId } from '../types/committee';
 import { WitnessInvitation, WitnessQuorumSummary } from '../types/witness';
@@ -126,6 +127,7 @@ export class ApiService {
         const error = typeof detail === 'string' ? detail : detail?.message || detail?.reason || `HTTP ${res.status}`;
         return { success: false, status: res.status, error, source: 'real_backend', timestamp: timestamp() };
       }
+      if (init.method && init.method !== 'GET') queueMicrotask(refreshDashboard);
       return { success: true, status: res.status, data: body as T, source: 'real_backend', timestamp: timestamp() };
     } catch {
       if (this.mockFallback) return null;

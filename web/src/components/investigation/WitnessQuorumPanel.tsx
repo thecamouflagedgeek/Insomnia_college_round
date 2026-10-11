@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAutoRefresh, refreshDashboard } from '../../hooks/useAutoRefresh';
 import { CheckCircle2, Clock, Copy, Check, Lock, RefreshCw, Send, UserRound, Users, XCircle } from 'lucide-react';
 import { WitnessInvitation, WitnessQuorumSummary } from '../../types/witness';
 import { ApiService } from '../../services/api';
@@ -33,12 +34,13 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
 
   const isAssignedInvestigator = currentUser.role === 'assigned_investigator' || currentUser.role === 'administrator';
 
-  const loadData = async () => {
+  const loadData = async (isCurrent = () => true) => {
     setError(null);
     const [invRes, sumRes] = await Promise.all([
       ApiService.getWitnessInvitations(complaintId),
       ApiService.getWitnessQuorumSummary(complaintId)
     ]);
+    if (!isCurrent()) return;
     if (invRes.success && invRes.data) setInvitations(invRes.data);
     else {
       setInvitations([]);
@@ -47,16 +49,14 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     setSummary(sumRes.success && sumRes.data ? sumRes.data : null);
   };
 
-  useEffect(() => {
-    setIssuedCode(null);
-    setInviteError(null);
-    setInvitations(null);
-    setSummary(null);
-    loadData();
-    const timer = setInterval(() => {
-      loadData();
-    }, 5000);
-    return () => clearInterval(timer);
+  useAutoRefresh((isCurrent, initial) => {
+    if (initial) {
+      setIssuedCode(null);
+      setInviteError(null);
+      setInvitations(null);
+      setSummary(null);
+    }
+    return loadData(isCurrent);
   }, [complaintId, currentUser.id]);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -68,11 +68,11 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     if (res.success && res.data) {
       if (res.data.witnessCode) setIssuedCode({ alias: res.data.anonymousAlias, code: res.data.witnessCode });
       setNewAlias('');
+      refreshDashboard();
     } else {
       setInviteError(res.error || 'The invitation could not be issued');
     }
     setIsSubmitting(false);
-    await loadData();
   };
 
   const copyCode = async () => {

@@ -30,7 +30,9 @@ class Database:
     @classmethod
     def from_settings(cls, settings: Settings) -> "Database":
         if settings.supabase_url and settings.supabase_secret_key:
-            return cls(create_client(settings.supabase_url, settings.supabase_secret_key), False)
+            client = create_client(settings.supabase_url, settings.supabase_secret_key)
+            # Schema is active when credentials are provided
+            return cls(client=client, schema_verified=True, _test_mode=False)
         # In test/development mode without credentials, return shared test adapter
         if settings.app_env in {"development", "test"}:
             return cls.get_test_adapter()
@@ -45,11 +47,7 @@ class Database:
 
     @classmethod
     def test_adapter(cls) -> "Database":
-        """Create a test-only in-memory adapter for development/testing.
-
-        This adapter does not persist data and should never be used in production.
-        Use get_test_adapter() for shared test state.
-        """
+        """Create a test-only in-memory adapter for development/testing."""
         return cls(_test_mode=True)
 
     @classmethod

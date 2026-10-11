@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { FileStack, GitCompareArrows, Layers, ShieldAlert, UserRoundSearch } from 'lucide-react';
 import { ApiService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -50,19 +51,20 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
   const [live, setLive] = useState<PatternReport | null>(null);
   const [state, setState] = useState<'loading' | 'live' | 'sample' | 'forbidden'>('loading');
 
-  // Live: the correlation + repeat-allegation engines over the cases this user may access.
-  useEffect(() => {
-    setState('loading');
-    ApiService.getPatterns().then((res) => {
-      if (res.success && res.data) {
-        setLive(res.data);
-        setState('live');
-      } else {
-        setLive(null);
-        setState(res.status === 403 ? 'forbidden' : 'sample');
-      }
-    });
-  }, [currentUser.id]);
+  const load = async (silent = false, isCurrent = () => true) => {
+    if (!silent) setState('loading');
+    const res = await ApiService.getPatterns();
+    if (!isCurrent()) return;
+    if (res.success && res.data) {
+      setLive(res.data);
+      setState('live');
+    } else {
+      setLive(null);
+      setState(res.status === 403 ? 'forbidden' : 'sample');
+    }
+  };
+
+  useAutoRefresh((isCurrent, initial) => load(!initial, isCurrent), [currentUser.id]);
 
   const clusters: Cluster[] = live
     ? [

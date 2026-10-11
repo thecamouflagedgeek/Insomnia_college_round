@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAutoRefresh, refreshDashboard } from '../../hooks/useAutoRefresh';
 import { CheckCircle2, FileDown, Gavel, RefreshCw } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -59,6 +60,7 @@ export function CaseOutcomePanel({ complaint, onChanged }: CaseOutcomePanelProps
     if (res.success) {
       setMessage({ ok: true, text: 'Resolution recorded. The reporter can now give anonymous feedback.' });
       onChanged();
+      refreshDashboard();
     } else {
       setMessage({ ok: false, text: res.error || 'Could not record the resolution' });
     }
@@ -155,12 +157,16 @@ export function RelatedCasesPanel({ complaintId, onOpenCase }: { complaintId: st
   const [related, setRelated] = useState<RelatedCases | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable'>('loading');
 
-  useEffect(() => {
-    setState('loading');
-    ApiService.getRelatedCases(complaintId).then((res) => {
-      setRelated(res.success ? res.data ?? null : null);
-      setState(res.success ? 'ok' : 'unavailable');
-    });
+  const load = async (isCurrent = () => true) => {
+    const res = await ApiService.getRelatedCases(complaintId);
+    if (!isCurrent()) return;
+    setRelated(res.success ? res.data ?? null : null);
+    setState(res.success ? 'ok' : 'unavailable');
+  };
+
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) setState('loading');
+    await load(isCurrent);
   }, [complaintId, currentUser.id]);
 
   const similar = related?.similar ?? [];

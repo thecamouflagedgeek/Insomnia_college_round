@@ -103,10 +103,26 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
         backend_dir = Path(__file__).resolve().parents[2]
         state_path = str(backend_dir / ".stub_state.json")
 
+    supabase_repo = None
+    supabase_url = env.get("SUPABASE_URL")
+    supabase_key = env.get("SUPABASE_SECRET_KEY")
+    if supabase_url and supabase_key and supabase_key != "replace_me":
+        try:
+            from app.core.supabase_repo import SupabaseRepository
+            from supabase import create_client
+            sb_client = create_client(supabase_url, supabase_key)
+            supabase_repo = SupabaseRepository(sb_client, key_bytes)
+        except Exception as exc:
+            if is_prod:
+                raise RuntimeError(f"Production Supabase initialization failed: {exc}") from exc
+    elif is_prod:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SECRET_KEY are required in production (APP_ENV=production)")
+
     store = StubStore(
         state_path or None,
         key_bytes,
-        seed_demo=demo_mode
+        seed_demo=demo_mode,
+        supabase=supabase_repo
     )
 
     @asynccontextmanager
@@ -120,6 +136,7 @@ def create_app(env: dict[str, str] | None = None) -> FastAPI:
 
     app = FastAPI(title="INCOGNITO integration stub", lifespan=lifespan)
     app.state.store = store
+    app.state.supabase = supabase_repo
     app.state.chain_mode = mode
     app.state.is_production = is_prod
     app.state.demo_permitted = (not is_prod) and demo_mode and mode == "offline"

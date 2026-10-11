@@ -264,6 +264,11 @@ def build_hr_router() -> APIRouter:
         c = _case_for(request, user, case_id)
         if user.role not in ("hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
+        if c.status in ("resolved", "closed"):
+            raise HTTPException(409, {"reason": "case_closed", "message": f"Case {case_id} is closed; its committee can no longer change."})
+        pending = [ch for ch in c.challenges if ch.status == "pending_review"]
+        if pending:
+            raise HTTPException(409, {"reason": "challenge_pending", "message": "A committee challenge is pending review. The committee cannot change until it is decided."})
         if len(set(body.member_ids)) != len(body.member_ids):
             raise HTTPException(422, {"reason": "duplicate_committee_members", "message": "All committee members must be distinct individuals."})
         if any(mid not in STAFF for mid in body.member_ids):

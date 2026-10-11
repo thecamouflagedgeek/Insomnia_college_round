@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { CommitteeMemberRecord } from '../../types/committee';
 import { ApiService } from '../../services/api';
 import { Users, AlertTriangle, CheckCircle, ShieldAlert, ShieldCheck } from 'lucide-react';
@@ -6,10 +7,10 @@ import { Users, AlertTriangle, CheckCircle, ShieldAlert, ShieldCheck } from 'luc
 export function CommitteeAssignmentPanel() {
   const [pool, setPool] = useState<CommitteeMemberRecord[]>([]);
 
-  useEffect(() => {
-    ApiService.getCommitteePool().then((res) => {
-      if (res.data) setPool(res.data);
-    });
+  useAutoRefresh(async (isCurrent) => {
+    const res = await ApiService.getCommitteePool();
+    if (!isCurrent()) return;
+    if (res.data) setPool(res.data);
   }, []);
 
   return (
