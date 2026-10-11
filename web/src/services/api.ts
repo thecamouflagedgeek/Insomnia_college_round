@@ -592,6 +592,50 @@ export class ApiService {
     };
   }
 
+  public static async assignCommittee(complaintId: string, memberIds: string[]): Promise<ApiResponse<Complaint>> {
+    const live = await this.live<Complaint>(`/cases/${encodeURIComponent(complaintId)}/committee`, this.post({ member_ids: memberIds }));
+    if (live) return live;
+
+    const c = stateComplaints.find(comp => comp.id === complaintId);
+    if (!c) {
+      return { success: false, status: 404, error: 'Case not found', source: 'stateful_mock', timestamp: new Date().toISOString() };
+    }
+
+    c.committeeMemberIds = memberIds;
+    c.status = 'committee_assigned';
+    c.requiredNextAction = '3-member committee seated. Lead investigator to open formal inquiry.';
+
+    stateCommitteePool.forEach(m => {
+      if (memberIds.includes(m.id)) {
+        m.assignmentStatus = 'active_assigned';
+        if (!m.assignedCaseIds.includes(complaintId)) m.assignedCaseIds.push(complaintId);
+      }
+    });
+
+    const now = new Date().toISOString();
+    stateAuditEvents.unshift({
+      id: `AUD-${Date.now()}`,
+      complaintId,
+      eventType: 'committee_assigned',
+      timestamp: now,
+      actorRef: `${this.user.name} (${this.user.title})`,
+      details: `Independent 3-member committee assigned to case ${complaintId}: ${memberIds.map(id => stateCommitteePool.find(m => m.id === id)?.name || id).join(', ')}.`,
+      sha256Proof: '8f2a93b41d2110c92bf5a19001124ae8092cc771124ae8092cc7719001124ae8',
+      merkleRoot: '0x9948201bc019248102948bc0192481029481092a18230bc71a80491823019bc0',
+      blockNumber: 62891420,
+      txHash: '0x1121bca01994afc09121a884efb204918230bc71a80418230bc71a8049182301',
+      verificationStatus: 'verified_commitment'
+    });
+
+    return {
+      success: true,
+      status: 200,
+      data: c,
+      source: 'stateful_mock',
+      timestamp: now
+    };
+  }
+
   // --- M3 ENGINES & CASE OUTCOMES (live backend only) ---
   private static unavailable<T>(): ApiResponse<T> {
     return {

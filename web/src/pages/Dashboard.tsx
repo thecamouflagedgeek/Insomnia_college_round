@@ -3,11 +3,16 @@ import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
   FolderOpen,
   History,
+  Inbox,
   Radio,
   RefreshCw,
-  Scale
+  Scale,
+  Search,
+  ShieldAlert,
+  Users
 } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge } from '../types/committee';
@@ -480,41 +485,150 @@ const KIND_TONE: Record<NextAction['tone'], string> = {
   teal: 'text-teal-700'
 };
 
-const STAGES: Array<{ key: Complaint['status'][]; label: string; color: string }> = [
-  { key: ['submitted'], label: STATUS_LABEL.submitted, color: 'bg-brand-200' },
-  { key: ['committee_assigned', 'reassignment_pending'], label: 'Committee', color: 'bg-brand-300' },
-  { key: ['under_challenge'], label: STATUS_LABEL.under_challenge, color: 'bg-attn-500' },
-  { key: ['investigation_active', 'witness_quorum_active'], label: 'Investigating', color: 'bg-brand-600' },
-  { key: ['resolved', 'archived'], label: 'Resolved', color: 'bg-teal-500' }
+interface StageConfig {
+  key: Complaint['status'][];
+  label: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  hexFill: string;
+  hexStroke: string;
+  iconColor: string;
+  barColor: string;
+}
+
+const STAGES: StageConfig[] = [
+  {
+    key: ['submitted'],
+    label: 'Submitted',
+    subtitle: 'Initial case filing and entry',
+    icon: <Inbox className="h-4 w-4" />,
+    hexFill: 'fill-slate-100',
+    hexStroke: 'stroke-slate-200',
+    iconColor: 'text-slate-500',
+    barColor: 'bg-slate-300'
+  },
+  {
+    key: ['committee_assigned', 'reassignment_pending'],
+    label: 'Committee',
+    subtitle: 'Assigned to review board',
+    icon: <Users className="h-4 w-4" />,
+    hexFill: 'fill-purple-50',
+    hexStroke: 'stroke-purple-200',
+    iconColor: 'text-purple-600',
+    barColor: 'bg-[#c084fc]'
+  },
+  {
+    key: ['under_challenge'],
+    label: 'Under challenge',
+    subtitle: 'Reviewing objections',
+    icon: <ShieldAlert className="h-4 w-4" />,
+    hexFill: 'fill-orange-50',
+    hexStroke: 'stroke-orange-200',
+    iconColor: 'text-orange-600',
+    barColor: 'bg-[#f97316]'
+  },
+  {
+    key: ['investigation_active', 'witness_quorum_active'],
+    label: 'Investigating',
+    subtitle: 'Fact-gathering and active inquiry',
+    icon: <Search className="h-4 w-4" />,
+    hexFill: 'fill-indigo-50',
+    hexStroke: 'stroke-indigo-200',
+    iconColor: 'text-[#4f33b8]',
+    barColor: 'bg-[#4f33b8]'
+  },
+  {
+    key: ['resolved', 'archived'],
+    label: 'Resolved',
+    subtitle: 'Final resolution and closure',
+    icon: <Check className="h-4 w-4 stroke-[2.5]" />,
+    hexFill: 'fill-slate-100',
+    hexStroke: 'stroke-slate-200',
+    iconColor: 'text-slate-500',
+    barColor: 'bg-slate-300'
+  }
 ];
+
+function SoftHexagonBadge({
+  icon,
+  fill,
+  stroke,
+  iconColor
+}: {
+  icon: React.ReactNode;
+  fill: string;
+  stroke: string;
+  iconColor: string;
+}) {
+  return (
+    <div className="relative flex h-11 w-11 shrink-0 items-center justify-center">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+        <path
+          d="M 50 6 Q 53 6 56 8 L 89 27 Q 93 29 93 34 L 93 66 Q 93 71 89 73 L 56 92 Q 53 94 50 94 Q 47 94 44 92 L 11 73 Q 7 71 7 66 L 7 34 Q 7 29 11 27 L 44 8 Q 47 6 50 6 Z"
+          className={`${fill} ${stroke}`}
+          strokeWidth="3.5"
+        />
+      </svg>
+      <span className={`relative z-10 ${iconColor}`}>{icon}</span>
+    </div>
+  );
+}
 
 function StageBreakdown({ complaints, resolved }: { complaints: Complaint[]; resolved: number }) {
   const total = complaints.length;
   if (total === 0) {
     return <EmptyState compact title="No cases yet" description="Progress appears once cases are assigned to your role." />;
   }
-  const rows = STAGES.map((s) => ({ ...s, count: complaints.filter((c) => s.key.includes(c.status)).length }));
+  const rows = STAGES.map((s) => ({
+    ...s,
+    count: complaints.filter((c) => s.key.includes(c.status)).length
+  }));
+
   return (
     <div className="flex flex-1 flex-col">
-      <p className="flex items-baseline gap-1.5 border-b border-line pb-4 text-ink">
+      <p className="flex items-baseline gap-1.5 border-b border-line pb-3 text-ink">
         <span className="text-[2.25rem] font-bold leading-none tracking-tight tabular">{resolved}</span>
         <span className="text-sm text-muted">of {total} resolved</span>
       </p>
-      {/* One track per stage, each scaled to the total, so stages compare at a glance. */}
-      <ol className="flex flex-1 flex-col justify-around gap-3 pt-4" aria-label="Cases by stage">
-        {rows.map((r) => (
-          <li key={r.label}>
-            <div className="flex items-baseline justify-between text-[0.8125rem]">
-              <span className={r.count ? 'text-ink' : 'text-muted'}>{r.label}</span>
-              <span className={`font-semibold tabular ${r.count ? 'text-ink' : 'text-muted'}`}>{r.count}</span>
-            </div>
-            <div className="mt-1.5 h-1.5 rounded-full bg-sunken">
-              {r.count > 0 && (
-                <div className={`bar-grow h-full rounded-full ${r.color}`} style={{ width: `${(r.count / total) * 100}%` }} />
-              )}
-            </div>
-          </li>
-        ))}
+
+      {/* Horizontal rows for each stage */}
+      <ol className="flex flex-1 flex-col justify-between gap-3.5 pt-3.5" aria-label="Cases by stage">
+        {rows.map((r) => {
+          const percent = total > 0 ? (r.count / total) * 100 : 0;
+          return (
+            <li key={r.label} className="flex items-center gap-3">
+              {/* Soft hexagonal icon badge on the left */}
+              <SoftHexagonBadge
+                icon={r.icon}
+                fill={r.hexFill}
+                stroke={r.hexStroke}
+                iconColor={r.iconColor}
+              />
+
+              {/* Stage title, subtitle, and progress bar in the middle */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[0.8125rem] font-semibold text-ink">{r.label}</span>
+                  {/* Fraction metric aligned to the far right */}
+                  <span className="shrink-0 text-xs font-bold tabular text-ink-soft">
+                    {r.count}/{total}
+                  </span>
+                </div>
+                <p className="truncate text-[0.6875rem] text-muted">{r.subtitle}</p>
+
+                {/* Rounded horizontal progress bar beneath subtitle */}
+                <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  {r.count > 0 && (
+                    <div
+                      className={`bar-grow h-full rounded-full ${r.barColor}`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

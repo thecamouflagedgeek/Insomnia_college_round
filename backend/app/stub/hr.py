@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from app.chain.hashing import content_sha256
 from app.stub.api import (_chain, _store, add_message, create_invitation, decide_challenge)
 from app.stub import intelligence
-from app.stub.store import DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, new_id, now
+from app.stub.store import DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, committee_entry, new_id, now
 from app.utils.pdf_generator import investigation_pdf
 
 SUPERVISORY = {"hr_reviewer", "independent_reviewer", "administrator"}
@@ -238,6 +238,10 @@ class WitnessInviteIn(BaseModel):
                          max_length=2000)
 
 
+class CommitteeAssignIn(BaseModel):
+    member_ids: list[str] = Field(min_length=1, max_length=5)
+
+
 def build_hr_router() -> APIRouter:
     r = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -254,6 +258,20 @@ def build_hr_router() -> APIRouter:
     def case(request: Request, case_id: str, user: Staff = Depends(staff)):
         c = _case_for(request, user, case_id)
         return complaint_dto(request, c, _chain(request).verifier.verify(case_id))
+
+    @r.post("/cases/{case_id}/committee")
+    def assign_committee(request: Request, case_id: str, body: CommitteeAssignIn, user: Staff = Depends(staff)):
+        c = _case_for(request, user, case_id)
+        if user.role not in ("hr_reviewer", "administrator"):
+            raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
+        store = _store(request)
+        with store.lock:
+            c.committee = [committee_entry(mid) for mid in body.member_ids if mid in STAFF]
+            if c.status == "submitted":
+                c.status = "committee_assigned"
+            _chain(request).audit.record(c.case_id, "committee_assigned", {"member_ids": body.member_ids})
+            store.save()
+        return complaint_dto(request, c)
 
     @r.get("/cases/{case_id}/messages")
     def messages(request: Request, case_id: str, user: Staff = Depends(staff)):

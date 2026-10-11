@@ -10,6 +10,7 @@ import { Section } from '../components/ui/Section';
 import { EmptyState } from '../components/ui/EmptyState';
 import { SkeletonRows } from '../components/ui/Skeleton';
 import { Avatar } from '../components/ui/Avatar';
+import { CommitteeFormationPanel } from '../components/committee/CommitteeFormationPanel';
 
 interface CommitteeManagementProps {
   initialPoolId?: CommitteePoolId;
@@ -95,6 +96,9 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
           </button>
         }
       />
+
+      {/* Committee Formation & Assignment Workflow */}
+      <CommitteeFormationPanel onCommitteeAssigned={refresh} />
 
       {/* Pool tabs */}
       <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">

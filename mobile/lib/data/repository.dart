@@ -43,9 +43,19 @@ class CommitteeMember {
 }
 
 const demoCommittee = [
-  CommitteeMember('demo-a', 'Committee member A', 'Member'),
-  CommitteeMember('demo-b', 'Committee member B', 'Member'),
-  CommitteeMember('demo-c', 'Committee member C', 'Member'),
+  CommitteeMember('usr_marcus', 'Marcus Vance', 'VP of Engineering Operations'),
+  CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
+  CommitteeMember('usr_priya', 'Priya Sundaram', 'Senior Director of People Relations'),
+];
+
+const demoEligibleCommitteePool = [
+  CommitteeMember('usr_marcus', 'Marcus Vance', 'VP of Engineering Operations'),
+  CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
+  CommitteeMember('usr_priya', 'Priya Sundaram', 'Senior Director of People Relations'),
+  CommitteeMember('usr_maya', 'Dr. Maya Lin', 'Presiding Officer (Internal Committee)'),
+  CommitteeMember('usr_tariq', 'Tariq Mansoor', 'Chief Compliance & Integrity Officer'),
+  CommitteeMember('usr_kenneth', 'Kenneth Cole', 'Director of Workplace Conflict Resolution'),
+  CommitteeMember('usr_sandra', 'Sandra Bullock-Lee', 'Senior Investigator (People Relations)'),
 ];
 
 class Challenge {
@@ -53,7 +63,7 @@ class Challenge {
     this.member,
     this.reason,
     this.explanation, {
-    this.status = 'Submitted — demo',
+    this.status = 'Under challenge — pending review',
   });
   final String member, reason, explanation;
   final String status;
@@ -101,17 +111,75 @@ abstract interface class EmployeeRepository {
 class DemoRepository implements EmployeeRepository, StoryReportRepository {
   final _reports = <Report>[
     Report(
-      id: 'DEMO-1042',
+      id: 'DEMO-892',
       category: 'Abuse of Authority',
-      title: 'Concern about team conduct',
-      description: 'A fictional report for exploring the employee experience.',
+      title: 'Repeated Retaliation and Rating Downgrade Post-Safety Disclosure',
+      description:
+          'Reporting manager systematically stripped project responsibilities, scheduled punitive isolation reviews, and threatened sponsorship following safety audit disclosure.',
       date: DateTime(2026, 10, 9),
-    ),
+      committee: [
+        const CommitteeMember('usr_marcus', 'Marcus Vance', 'VP of Engineering Operations'),
+        const CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
+        const CommitteeMember('usr_priya', 'Priya Sundaram', 'Senior Director of People Relations'),
+      ],
+    )
+      ..status = 'Under challenge'
+      ..challenges.add(
+        Challenge(
+          'Marcus Vance',
+          'Professional relationship',
+          'Direct supervisory hierarchy creates conflict of interest regarding Q3 rating evaluation override.',
+          status: 'Under challenge — pending independent review',
+        ),
+      ),
+    Report(
+      id: 'DEMO-741',
+      category: 'Sexual Harassment',
+      title: 'Persistent Inappropriate Advances and Promotion Coercion',
+      description:
+          'Senior director repeatedly made unsolicited advances during off-site symposium and linked executive sponsorship for upcoming promotion committee.',
+      date: DateTime(2026, 10, 5),
+      committee: [
+        const CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
+        const CommitteeMember('usr_maya', 'Dr. Maya Lin', 'Presiding Officer (Internal Committee)'),
+        const CommitteeMember('usr_priya', 'Priya Sundaram', 'Senior Director of People Relations'),
+      ],
+    )..status = 'Investigating',
+    Report(
+      id: 'DEMO-650',
+      category: 'Discrimination',
+      title: 'Systemic Exclusion in Compensation Bands and Promotion Velocity',
+      description:
+          'Documentation showing minority engineers systematically clustered in lower compensation tier bands despite equivalent tenure and superior peer reviews.',
+      date: DateTime(2026, 10, 2),
+      committee: [
+        const CommitteeMember('usr_kenneth', 'Kenneth Cole', 'Director of Workplace Conflict Resolution'),
+        const CommitteeMember('usr_sandra', 'Sandra Bullock-Lee', 'Senior Investigator (People Relations)'),
+        const CommitteeMember('usr_tariq', 'Tariq Mansoor', 'Chief Compliance & Integrity Officer'),
+      ],
+    )..status = 'Committee assigned',
+    Report(
+      id: 'DEMO-512',
+      category: 'Whistleblowing & Bribery',
+      title: 'Vendor Procurement Kickback and Subcontracting Manipulation',
+      description:
+          'Internal audit logs indicate unapproved vendor contract amendments signed under non-standard terms with associated secondary shell entities.',
+      date: DateTime(2026, 9, 28),
+      committee: [
+        const CommitteeMember('usr_tariq', 'Tariq Mansoor', 'Chief Compliance & Integrity Officer'),
+        const CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
+        const CommitteeMember('usr_priya', 'Priya Sundaram', 'Senior Director of People Relations'),
+      ],
+    )..status = 'Submitted',
   ];
   final _invitations = [
     Invitation(
       'DEMO-W08',
       'You are invited to voluntarily assist with an authorized workplace investigation. Interviews take place outside this app.',
+    ),
+    Invitation(
+      'DEMO-W09',
+      'Voluntary witness corroboration request for incident review INC-741. Participation is anonymous and protected.',
     ),
   ];
   @override

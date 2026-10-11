@@ -8,15 +8,16 @@ import { Notice } from '../ui/Notice';
 import { EmptyState } from '../ui/EmptyState';
 import { SkeletonRows } from '../ui/Skeleton';
 import { formatDate } from '../../lib/format';
+import { ShareIncidentDetailsCard } from './ShareIncidentDetailsCard';
 
 interface WitnessQuorumPanelProps {
   complaintId: string;
 }
 
 const STATUS: Record<WitnessInvitation['status'], { label: string; cls: string; icon: React.ReactNode }> = {
-  accepted: { label: 'Participating', cls: 'bg-teal-50 text-teal-700', icon: <CheckCircle2 /> },
-  declined: { label: 'Declined', cls: 'bg-sunken text-muted', icon: <XCircle /> },
-  pending: { label: 'Awaiting reply', cls: 'bg-warn-50 text-warn-700', icon: <Clock /> }
+  accepted: { label: 'Participating', cls: 'bg-teal-50 text-teal-700', icon: <CheckCircle2 className="h-3 w-3" /> },
+  declined: { label: 'Declined', cls: 'bg-sunken text-muted', icon: <XCircle className="h-3 w-3" /> },
+  pending: { label: 'Awaiting reply', cls: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200', icon: <Clock className="h-3 w-3" /> }
 };
 
 export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
@@ -91,24 +92,25 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     : null;
 
   return (
-    <Section
-      icon={<Users />}
-      title="Witness quorum"
-      description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
-      action={
-        summary?.quorumMet ? (
-          <span className="chip bg-teal-50 text-teal-700">
-            <CheckCircle2 />
-            Quorum reached
-          </span>
-        ) : !isAssignedInvestigator ? (
-          <span className="chip bg-sunken text-muted" title="Participation details are visible to the assigned investigator only">
-            <Lock />
-            Partly redacted
-          </span>
-        ) : null
-      }
-    >
+    <div className="space-y-5">
+      <Section
+        icon={<Users />}
+        title="Witness quorum"
+        description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
+        action={
+          summary?.quorumMet ? (
+            <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Quorum reached
+            </span>
+          ) : !isAssignedInvestigator ? (
+            <span className="chip bg-sunken text-muted" title="Participation details are visible to the assigned investigator only">
+              <Lock className="h-3.5 w-3.5" />
+              Partly redacted
+            </span>
+          ) : null
+        }
+      >
       <div className="space-y-5">
         {stats && (
           <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -210,9 +212,16 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
             )}
           </form>
         ) : (
-          <Notice tone="locked">Only the assigned investigator can issue witness invitations.</Notice>
+          <div className="flex items-center gap-2.5 rounded-xl border border-purple-200 bg-[#fbf9fe] p-3 text-xs text-purple-900">
+            <Lock className="h-4 w-4 shrink-0 text-purple-700" />
+            <span>Only the assigned investigator can issue witness invitations.</span>
+          </div>
         )}
       </div>
     </Section>
+
+    {/* Share Incident Details card */}
+    <ShareIncidentDetailsCard complaintId={complaintId} onSubmitted={loadData} />
+    </div>
   );
 }
