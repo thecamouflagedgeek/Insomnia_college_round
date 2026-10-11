@@ -231,7 +231,10 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
         HintCard(
           modeText(
             'Evidence is optional. Demo selections are not uploaded, sealed, or placed in public storage. Upload progress and retries require the agreed upload contract.',
-            'Evidence is optional. Files upload after your report is accepted and are sealed with a hash anchored on Polygon. Remove names or faces you do not need to share.',
+            chainText(
+              'Evidence is optional. Files upload after your report is accepted and are sealed with a hash anchored on Polygon. Remove names or faces you do not need to share.',
+              'Evidence is optional. Files upload after your report is accepted and are sealed with a hash in the audit log (offline test chain, not Polygon). Remove names or faces you do not need to share.',
+            ),
           ),
         ),
         ActionButton('Choose an image', () => pick(true)),
@@ -294,7 +297,10 @@ class _CreateReportScreenState extends ConsumerState<CreateReportScreen> {
         HintCard(
           modeText(
             'This creates a local demo case only. There is no backend acceptance, upload, or cryptographic seal. Demo data disappears when the session is cleared or the app closes.',
-            'Your phone proves you are an employee without saying which one, and the proof is checked on Polygon. This takes a few seconds. One report per day.',
+            chainText(
+              'Your phone proves you are an employee without saying which one, and the proof is checked on Polygon. This takes a few seconds. One report per day.',
+              'Test backend: the proof is not checked cryptographically and nothing goes on-chain. One report per day.',
+            ),
           ),
         ),
       ],
@@ -340,7 +346,10 @@ class SuccessScreen extends StatelessWidget {
             Text(
               modeText(
                 'Local demo report created.\nBackend acceptance: unavailable.\nEvidence seal: unavailable.',
-                'Report accepted and sealed on Polygon.\nKeep this phone: it holds the only key to this case.',
+                chainText(
+                  'Report accepted and sealed on Polygon.\nKeep this phone: it holds the only key to this case.',
+                  'Report accepted and sealed in the audit log (offline test chain).\nKeep this phone: it holds the only key to this case.',
+                ),
               ),
             ),
           ],

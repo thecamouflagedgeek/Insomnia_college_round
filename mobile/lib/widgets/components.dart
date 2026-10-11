@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme.dart';
+import '../data/repository.dart';
 
 class SoftCard extends StatelessWidget {
   const SoftCard({super.key, required this.child, this.onTap});
@@ -80,8 +81,11 @@ class PageShell extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            const Text(
-              'DEMO WORKSPACE · LOCAL DATA',
+            Text(
+              modeText(
+                'DEMO WORKSPACE · LOCAL DATA',
+                chainText('LIVE WORKSPACE', 'LIVE WORKSPACE · OFFLINE TEST CHAIN'),
+              ),
               style: TextStyle(
                 fontSize: 10,
                 letterSpacing: 1.3,

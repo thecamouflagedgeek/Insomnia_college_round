@@ -49,12 +49,14 @@ const _eventTitles = {
   'reflection_recorded': 'Feedback received',
 };
 
-const _verifyStates = {
-  'verified': 'Verified on Polygon',
-  'pending_anchor': 'Sealed, waiting for the next Polygon anchor',
+final _chainName = chainText('Polygon', 'the offline test chain');
+
+final _verifyStates = {
+  'verified': 'Verified on $_chainName',
+  'pending_anchor': 'Sealed, waiting for the next anchor on $_chainName',
   'tampered': 'Verification failed: record was altered',
   'chain_broken': 'Verification failed: an earlier record changed',
-  'anchor_mismatch': 'Verification failed: does not match Polygon',
+  'anchor_mismatch': 'Verification failed: does not match $_chainName',
 };
 
 /// EmployeeRepository over shared/api-contract.yaml. Drop-in for DemoRepository; see [liveRepositoryProvider].
@@ -327,6 +329,8 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     final at = event['at'] as String? ?? '';
     final tx = receipt?['anchor_tx'] as String?;
     if (tx == null) return 'Sealed $at. Not yet anchored.';
-    return 'Sealed $at. Anchored on Polygon Amoy in tx ${tx.substring(0, 10)}…\n${receipt!['explorer_url']}';
+    if (offlineChain) return 'Sealed $at. Anchored on the offline test chain (no public transaction).';
+    final url = receipt!['explorer_url'] as String?;
+    return 'Sealed $at. Anchored on Polygon Amoy in tx ${tx.substring(0, 10)}…${url == null ? '' : '\n$url'}';
   }
 }

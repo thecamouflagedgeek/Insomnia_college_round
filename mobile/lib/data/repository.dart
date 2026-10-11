@@ -347,5 +347,12 @@ bool get demoEnabled =>
     : (dotenv.isInitialized ? dotenv.env['APP_MODE'] ?? 'demo' : 'demo') ==
           'demo';
 
+/// Builds made with ZK_PROVER=offline talk to the offline backend (CHAIN_MODE=offline): nothing reaches Polygon and
+/// proofs are not checked cryptographically, so live wording must not claim either.
+const bool offlineChain = String.fromEnvironment('ZK_PROVER', defaultValue: 'webview') == 'offline';
+
+/// Live wording for a real Polygon backend vs the offline test backend.
+String chainText(String polygon, String offline) => offlineChain ? offline : polygon;
+
 /// Demo wording keeps the labelled-demo copy (and its tests); live wording describes what really happens.
 String modeText(String demo, String live) => demoEnabled ? demo : live;
