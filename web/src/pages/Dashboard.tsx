@@ -502,19 +502,19 @@ const STAGES: StageConfig[] = [
     label: 'Submitted',
     subtitle: 'Initial case filing and entry',
     icon: <Inbox className="h-4 w-4" />,
-    hexFill: 'fill-slate-100',
-    hexStroke: 'stroke-slate-200',
-    iconColor: 'text-slate-500',
-    barColor: 'bg-slate-300'
+    hexFill: 'fill-[#f8fafc]',
+    hexStroke: 'stroke-[#cbd5e1]',
+    iconColor: 'text-[#64748b]',
+    barColor: 'bg-[#cbd5e1]'
   },
   {
     key: ['committee_assigned', 'reassignment_pending'],
     label: 'Committee',
     subtitle: 'Assigned to review board',
     icon: <Users className="h-4 w-4" />,
-    hexFill: 'fill-purple-50',
-    hexStroke: 'stroke-purple-200',
-    iconColor: 'text-purple-600',
+    hexFill: 'fill-[#fbf9fe]',
+    hexStroke: 'stroke-[#c084fc]/60',
+    iconColor: 'text-[#8b5cf6]',
     barColor: 'bg-[#c084fc]'
   },
   {
@@ -522,9 +522,9 @@ const STAGES: StageConfig[] = [
     label: 'Under challenge',
     subtitle: 'Reviewing objections',
     icon: <ShieldAlert className="h-4 w-4" />,
-    hexFill: 'fill-orange-50',
-    hexStroke: 'stroke-orange-200',
-    iconColor: 'text-orange-600',
+    hexFill: 'fill-[#fff7ed]',
+    hexStroke: 'stroke-[#f97316]/60',
+    iconColor: 'text-[#ea580c]',
     barColor: 'bg-[#f97316]'
   },
   {
@@ -532,8 +532,8 @@ const STAGES: StageConfig[] = [
     label: 'Investigating',
     subtitle: 'Fact-gathering and active inquiry',
     icon: <Search className="h-4 w-4" />,
-    hexFill: 'fill-indigo-50',
-    hexStroke: 'stroke-indigo-200',
+    hexFill: 'fill-[#f5f3ff]',
+    hexStroke: 'stroke-[#4f33b8]/50',
     iconColor: 'text-[#4f33b8]',
     barColor: 'bg-[#4f33b8]'
   },
@@ -541,11 +541,11 @@ const STAGES: StageConfig[] = [
     key: ['resolved', 'archived'],
     label: 'Resolved',
     subtitle: 'Final resolution and closure',
-    icon: <Check className="h-4 w-4 stroke-[2.5]" />,
-    hexFill: 'fill-slate-100',
-    hexStroke: 'stroke-slate-200',
-    iconColor: 'text-slate-500',
-    barColor: 'bg-slate-300'
+    icon: <Check className="h-4 w-4 stroke-[2.8]" />,
+    hexFill: 'fill-[#f8fafc]',
+    hexStroke: 'stroke-[#cbd5e1]',
+    iconColor: 'text-[#64748b]',
+    barColor: 'bg-[#cbd5e1]'
   }
 ];
 
@@ -561,12 +561,12 @@ function SoftHexagonBadge({
   iconColor: string;
 }) {
   return (
-    <div className="relative flex h-11 w-11 shrink-0 items-center justify-center">
+    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
       <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
         <path
           d="M 50 6 Q 53 6 56 8 L 89 27 Q 93 29 93 34 L 93 66 Q 93 71 89 73 L 56 92 Q 53 94 50 94 Q 47 94 44 92 L 11 73 Q 7 71 7 66 L 7 34 Q 7 29 11 27 L 44 8 Q 47 6 50 6 Z"
           className={`${fill} ${stroke}`}
-          strokeWidth="3.5"
+          strokeWidth="3.2"
         />
       </svg>
       <span className={`relative z-10 ${iconColor}`}>{icon}</span>
@@ -595,8 +595,9 @@ function StageBreakdown({ complaints, resolved }: { complaints: Complaint[]; res
       <ol className="flex flex-1 flex-col justify-between gap-3.5 pt-3.5" aria-label="Cases by stage">
         {rows.map((r) => {
           const percent = total > 0 ? (r.count / total) * 100 : 0;
+          const displayDenominator = r.label === 'Submitted' && r.count === 0 ? 0 : total;
           return (
-            <li key={r.label} className="flex items-center gap-3">
+            <li key={r.label} className="flex items-center gap-3.5">
               {/* Soft hexagonal icon badge on the left */}
               <SoftHexagonBadge
                 icon={r.icon}
@@ -608,21 +609,26 @@ function StageBreakdown({ complaints, resolved }: { complaints: Complaint[]; res
               {/* Stage title, subtitle, and progress bar in the middle */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[0.8125rem] font-semibold text-ink">{r.label}</span>
+                  <span className="truncate text-[0.875rem] font-semibold text-ink">{r.label}</span>
                   {/* Fraction metric aligned to the far right */}
-                  <span className="shrink-0 text-xs font-bold tabular text-ink-soft">
-                    {r.count}/{total}
+                  <span className="shrink-0 text-xs font-bold tabular text-ink">
+                    {r.count} / {displayDenominator}
                   </span>
                 </div>
-                <p className="truncate text-[0.6875rem] text-muted">{r.subtitle}</p>
+                <p className="truncate text-[0.75rem] text-muted">{r.subtitle}</p>
 
                 {/* Rounded horizontal progress bar beneath subtitle */}
-                <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                <div className="relative mt-2 h-2.5 w-full rounded-full bg-[#eef2f6] overflow-hidden flex items-center justify-center">
                   {r.count > 0 && (
                     <div
-                      className={`bar-grow h-full rounded-full ${r.barColor}`}
+                      className={`bar-grow absolute left-0 top-0 bottom-0 rounded-full ${r.barColor}`}
                       style={{ width: `${percent}%` }}
                     />
+                  )}
+                  {r.label === 'Resolved' && r.count === 0 && (
+                    <span className="relative z-10 text-[0.625rem] text-slate-500 font-medium">
+                      0 of {total} resolved
+                    </span>
                   )}
                 </div>
               </div>

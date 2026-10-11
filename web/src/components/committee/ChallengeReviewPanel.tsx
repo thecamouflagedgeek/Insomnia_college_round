@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Lock, RefreshCw, Scale, UserCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Lock, RefreshCw, Scale, UserCheck, XCircle } from 'lucide-react';
 import { CommitteeChallenge } from '../../types/committee';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -21,9 +21,21 @@ const CONFLICT_LABEL: Record<CommitteeChallenge['conflictCategory'], string> = {
 };
 
 const STATUS = {
-  pending_independent_review: { label: 'Awaiting independent review', cls: 'bg-attn-50 text-attn-700' },
-  approved_access_revoked: { label: 'Upheld · access revoked', cls: 'bg-teal-50 text-teal-700' },
-  rejected_assignment_maintained: { label: 'Dismissed · member kept', cls: 'bg-sunken text-ink-soft' }
+  pending_independent_review: {
+    label: 'Under challenge',
+    icon: <Clock className="h-3.5 w-3.5 shrink-0" />,
+    cls: 'bg-[#ea580c] text-white shadow-[0_0_10px_rgba(234,88,12,0.4)] ring-1 ring-orange-400/40'
+  },
+  approved_access_revoked: {
+    label: 'Upheld · access revoked',
+    icon: <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />,
+    cls: 'bg-[#059669] text-white shadow-[0_0_10px_rgba(5,150,105,0.35)] ring-1 ring-emerald-400/40'
+  },
+  rejected_assignment_maintained: {
+    label: 'Dismissed · member kept',
+    icon: <XCircle className="h-3.5 w-3.5 shrink-0" />,
+    cls: 'bg-[#64748b] text-white ring-1 ring-slate-400/40'
+  }
 } as const;
 
 export function ChallengeReviewPanel({ challenge, onDecisionApplied }: ChallengeReviewPanelProps) {
@@ -101,7 +113,10 @@ export function ChallengeReviewPanel({ challenge, onDecisionApplied }: Challenge
             </p>
           </div>
         </div>
-        <span className={`chip self-start ${status.cls}`}>{status.label}</span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold self-start ${status.cls}`}>
+          {status.icon}
+          {status.label}
+        </span>
       </div>
 
       <div className="mt-4 rounded-2xl bg-sunken p-4">

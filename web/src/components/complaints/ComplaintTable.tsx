@@ -69,7 +69,7 @@ export function ComplaintTable({ complaints, onSelectComplaint, compact = false 
                         onSelectComplaint(item);
                       }}
                       aria-label={`Open case ${item.id}`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors group-hover:bg-brand-600 group-hover:text-white"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted transition-all group-hover:bg-[#9d84cf] group-hover:text-white"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </button>

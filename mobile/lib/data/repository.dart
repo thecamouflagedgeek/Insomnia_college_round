@@ -42,6 +42,133 @@ class CommitteeMember {
   final String id, name, role;
 }
 
+class DemoUser {
+  const DemoUser({
+    required this.id,
+    required this.name,
+    required this.role,
+    required this.title,
+    required this.department,
+    this.email = '',
+  });
+  final String id, name, role, title, department, email;
+}
+
+const demoUsers = [
+  DemoUser(
+    id: 'emp_jordan',
+    name: 'Jordan Taylor',
+    role: 'employee_reporter',
+    title: 'Senior Systems Architect',
+    department: 'Core Infrastructure',
+    email: 'j.taylor@incognito.org',
+  ),
+  DemoUser(
+    id: 'emp_ananya',
+    name: 'Ananya Sharma',
+    role: 'employee_reporter',
+    title: 'Staff Product Manager',
+    department: 'Product Growth',
+    email: 'a.sharma@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_marcus',
+    name: 'Marcus Vance',
+    role: 'committee_member',
+    title: 'VP of Engineering Operations',
+    department: 'Engineering Operations',
+    email: 'm.vance@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_david',
+    name: 'David Kim',
+    role: 'committee_member',
+    title: 'Associate General Counsel (Labor)',
+    department: 'Legal Counsel',
+    email: 'd.kim@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_priya',
+    name: 'Priya Sundaram',
+    role: 'committee_member',
+    title: 'Senior Director of People Relations',
+    department: 'People Relations',
+    email: 'p.sundaram@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_maya',
+    name: 'Dr. Maya Lin',
+    role: 'committee_member',
+    title: 'Presiding Officer (Internal Committee)',
+    department: 'People Operations',
+    email: 'm.lin@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_tariq',
+    name: 'Tariq Mansoor',
+    role: 'committee_member',
+    title: 'Chief Compliance & Integrity Officer',
+    department: 'Ethics & Compliance',
+    email: 't.mansoor@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_kenneth',
+    name: 'Kenneth Cole',
+    role: 'committee_member',
+    title: 'Director of Workplace Conflict Resolution',
+    department: 'People & Culture',
+    email: 'k.cole@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_sandra',
+    name: 'Sandra Bullock-Lee',
+    role: 'committee_member',
+    title: 'Senior Investigator (People Relations)',
+    department: 'Ethics Unit',
+    email: 's.lee@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_rachel',
+    name: 'Rachel Adams',
+    role: 'committee_member',
+    title: 'Global Head of Diversity & Inclusion',
+    department: 'D&I Directorate',
+    email: 'r.adams@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_carlos',
+    name: 'Carlos Mendoza',
+    role: 'committee_member',
+    title: 'Lead Compensation & Equity Analyst',
+    department: 'Total Rewards',
+    email: 'c.mendoza@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_aris',
+    name: 'Dr. Aris Thorne',
+    role: 'independent_reviewer',
+    title: 'Independent Ombudsperson & Challenge Adjudicator',
+    department: 'External Oversight Panel',
+    email: 'a.thorne@ombuds-independent.org',
+  ),
+  DemoUser(
+    id: 'usr_elena',
+    name: 'Elena Rostova',
+    role: 'assigned_investigator',
+    title: 'Lead Workplace Misconduct Investigator',
+    department: 'Independent Ethics Unit',
+    email: 'e.rostova@incognito.org',
+  ),
+  DemoUser(
+    id: 'usr_sarah',
+    name: 'Sarah Jenkins',
+    role: 'hr_reviewer',
+    title: 'Senior HR Operations & Compliance Lead',
+    department: 'People & Culture',
+    email: 's.jenkins@incognito.org',
+  ),
+];
+
 const demoCommittee = [
   CommitteeMember('usr_marcus', 'Marcus Vance', 'VP of Engineering Operations'),
   CommitteeMember('usr_david', 'David Kim', 'Associate General Counsel (Labor)'),
@@ -56,6 +183,8 @@ const demoEligibleCommitteePool = [
   CommitteeMember('usr_tariq', 'Tariq Mansoor', 'Chief Compliance & Integrity Officer'),
   CommitteeMember('usr_kenneth', 'Kenneth Cole', 'Director of Workplace Conflict Resolution'),
   CommitteeMember('usr_sandra', 'Sandra Bullock-Lee', 'Senior Investigator (People Relations)'),
+  CommitteeMember('usr_rachel', 'Rachel Adams', 'Global Head of Diversity & Inclusion'),
+  CommitteeMember('usr_carlos', 'Carlos Mendoza', 'Lead Compensation & Equity Analyst'),
 ];
 
 class Challenge {
@@ -240,7 +369,15 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
     String explanation,
   ) async {
     await _delay();
-    report.challenges.add(Challenge(member, reason, explanation));
+    report.challenges.add(
+      Challenge(
+        member,
+        reason,
+        explanation,
+        status: 'Under challenge — pending review',
+      ),
+    );
+    report.status = 'Under challenge';
   }
 
   @override

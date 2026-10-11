@@ -515,15 +515,31 @@ export class ApiService {
       if (!stateMessages[complaintId]) {
         stateMessages[complaintId] = [];
       }
+      const now = new Date().toISOString();
       const newMsg = {
         id: `msg-${Date.now()}`,
         sender: `${this.user.name} (${this.user.title})`,
         text,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
         isEncrypted: true
       };
       stateMessages[complaintId].push(newMsg);
-      return { success: true, status: 201, data: newMsg, source: 'stateful_mock', timestamp: new Date().toISOString() };
+
+      stateAuditEvents.unshift({
+        id: `AUD-${Date.now()}`,
+        complaintId,
+        eventType: 'witness_statement_recorded',
+        timestamp: now,
+        actorRef: `${this.user.name} (${this.user.title})`,
+        details: `Incident observation / evidence note recorded: "${text.slice(0, 100)}${text.length > 100 ? '…' : ''}".`,
+        sha256Proof: '7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069',
+        merkleRoot: '0x8849bca0199248bbca019248bca019248bca019248bca019248bca019248bc01',
+        blockNumber: 62891460,
+        txHash: '0x9482f012cc8a41289df71900bfa2210499e984210aef102948bc0192481092a18230',
+        verificationStatus: 'verified_commitment'
+      });
+
+      return { success: true, status: 201, data: newMsg, source: 'stateful_mock', timestamp: now };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, status: 403, error: msg, source: 'stateful_mock', timestamp: new Date().toISOString() };

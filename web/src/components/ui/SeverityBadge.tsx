@@ -33,20 +33,20 @@ export function SeverityBadge({ severity, className = '' }: SeverityBadgeProps) 
   if (severity === 'medium') {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900 ring-1 ring-inset ring-amber-300 ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full bg-[#d97706] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white shadow-[0_0_8px_rgba(217,119,6,0.35)] ring-1 ring-amber-400/40 ${className}`}
       >
-        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-600" />
-        Medium
+        <AlertTriangle className="h-3 w-3 shrink-0 stroke-[2.2]" />
+        MEDIUM
       </span>
     );
   }
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200 ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full bg-[#64748b] px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white ring-1 ring-slate-400/40 ${className}`}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-      Low
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-slate-200" />
+      LOW
     </span>
   );
 }

@@ -83,6 +83,105 @@ export const DEMO_USERS: User[] = [
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
     assignedCaseIds: ['INC-741', 'INC-650'],
     conflictedCaseIds: []
+  },
+  {
+    id: 'usr_maya',
+    name: 'Dr. Maya Lin',
+    email: 'm.lin@incognito.org',
+    role: 'committee_member',
+    title: 'Presiding Officer (Internal Committee)',
+    department: 'People Operations',
+    avatar: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: ['INC-741'],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_tariq',
+    name: 'Tariq Mansoor',
+    email: 't.mansoor@incognito.org',
+    role: 'committee_member',
+    title: 'Chief Compliance & Integrity Officer',
+    department: 'Ethics & Compliance',
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: ['INC-512'],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_kenneth',
+    name: 'Kenneth Cole',
+    email: 'k.cole@incognito.org',
+    role: 'committee_member',
+    title: 'Director of Workplace Conflict Resolution',
+    department: 'People & Culture',
+    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_sandra',
+    name: 'Sandra Bullock-Lee',
+    email: 's.lee@incognito.org',
+    role: 'committee_member',
+    title: 'Senior Investigator (People Relations)',
+    department: 'Ethics Unit',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_rachel',
+    name: 'Rachel Adams',
+    email: 'r.adams@incognito.org',
+    role: 'committee_member',
+    title: 'Global Head of Diversity & Inclusion',
+    department: 'D&I Directorate',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: ['INC-650'],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_carlos',
+    name: 'Carlos Mendoza',
+    email: 'c.mendoza@incognito.org',
+    role: 'committee_member',
+    title: 'Lead Compensation & Equity Analyst',
+    department: 'Total Rewards',
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: ['INC-650'],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_fatima',
+    name: 'Fatima Al-Hassan',
+    email: 'f.alhassan@incognito.org',
+    role: 'committee_member',
+    title: 'Senior Labor Relations Director',
+    department: 'Employee Relations',
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_meera',
+    name: 'Advocate Meera Deshmukh',
+    email: 'm.deshmukh@legal-counsel.org',
+    role: 'committee_member',
+    title: 'External Legal Member (POSH Specialist)',
+    department: 'External Statutory Panel',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [],
+    conflictedCaseIds: []
+  },
+  {
+    id: 'usr_arthur',
+    name: 'Hon. Arthur Vance (Retd.)',
+    email: 'a.vance@appellate-review.org',
+    role: 'independent_reviewer',
+    title: 'Senior Appellate Ombuds Counsel',
+    department: 'External Review Board',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    assignedCaseIds: [],
+    conflictedCaseIds: []
   }
 ];
 

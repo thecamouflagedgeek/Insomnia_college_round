@@ -15,9 +15,9 @@ interface WitnessQuorumPanelProps {
 }
 
 const STATUS: Record<WitnessInvitation['status'], { label: string; cls: string; icon: React.ReactNode }> = {
-  accepted: { label: 'Participating', cls: 'bg-teal-50 text-teal-700', icon: <CheckCircle2 className="h-3 w-3" /> },
-  declined: { label: 'Declined', cls: 'bg-sunken text-muted', icon: <XCircle className="h-3 w-3" /> },
-  pending: { label: 'Awaiting reply', cls: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200', icon: <Clock className="h-3 w-3" /> }
+  accepted: { label: 'Participating', cls: 'bg-[#e6f4ea] text-[#137333] border border-[#ceead6]', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  declined: { label: 'Declined', cls: 'bg-sunken text-muted ring-1 ring-slate-200', icon: <XCircle className="h-3.5 w-3.5" /> },
+  pending: { label: 'Awaiting reply', cls: 'bg-[#fff7ed] text-[#ea580c] ring-1 ring-[#fdba74]', icon: <Clock className="h-3.5 w-3.5" /> }
 };
 
 export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
@@ -99,8 +99,8 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
         description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
         action={
           summary?.quorumMet ? (
-            <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-              <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-semibold text-[#137333] border border-[#ceead6]">
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#137333]" />
               Quorum reached
             </span>
           ) : !isAssignedInvestigator ? (
@@ -141,13 +141,13 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
           ) : invitations.length === 0 ? (
             <EmptyState compact icon={<UserRound />} title="No witnesses invited" description="Invitations issued by the assigned investigator appear here." />
           ) : (
-            <ul className="stagger divide-y divide-line/70 rounded-2xl border border-line">
+            <ul className="stagger space-y-2.5">
               {invitations.map((w) => {
                 const st = STATUS[w.status] ?? STATUS.pending;
                 return (
-                  <li key={w.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <li key={w.id} className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-3.5 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
                         <UserRound className="h-4 w-4" />
                       </span>
                       <div>
@@ -158,13 +158,13 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5 pl-11 sm:pl-0">
+                    <div className="flex flex-wrap items-center gap-1.5 pl-12 sm:pl-0">
                       {w.statementProvided && (
                         <span className="chip bg-brand-50 text-brand-700 tabular">
                           Statement{w.statementLengthWords ? ` · ${w.statementLengthWords} words` : ''}
                         </span>
                       )}
-                      <span className={`chip ${st.cls}`}>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${st.cls}`}>
                         {st.icon}
                         {st.label}
                       </span>
@@ -212,7 +212,7 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
             )}
           </form>
         ) : (
-          <div className="flex items-center gap-2.5 rounded-xl border border-purple-200 bg-[#fbf9fe] p-3 text-xs text-purple-900">
+          <div className="flex items-center gap-2.5 rounded-2xl border border-purple-200/80 bg-[#fbf9fe] p-3 text-xs text-purple-900 font-medium">
             <Lock className="h-4 w-4 shrink-0 text-purple-700" />
             <span>Only the assigned investigator can issue witness invitations.</span>
           </div>

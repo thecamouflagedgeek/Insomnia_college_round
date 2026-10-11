@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { List, Paperclip, Image as ImageIcon, Send, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { ApiService } from '../../services/api';
 
@@ -13,6 +13,23 @@ export function ShareIncidentDetailsCard({ complaintId, onSubmitted }: ShareInci
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recentSubmissions, setRecentSubmissions] = useState<Array<{ id: string; text: string; timestamp: string }>>([]);
+
+  useEffect(() => {
+    let active = true;
+    ApiService.getMessages(complaintId).then((res) => {
+      if (active && res.success && res.data) {
+        const mapped = res.data.map((m) => ({
+          id: m.id,
+          text: m.text,
+          timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }));
+        setRecentSubmissions(mapped);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [complaintId]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -116,7 +133,7 @@ export function ShareIncidentDetailsCard({ complaintId, onSubmitted }: ShareInci
             <button
               type="submit"
               disabled={submitting || !details.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               {submitting ? (
                 <>

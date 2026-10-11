@@ -273,6 +273,7 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
         status: _challengeLabels['pending_review']!,
       ),
     );
+    report.status = 'Under challenge';
   }
 
   @override
