@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, Scale, UserX, Users } from 'lucide-react';
 import { CommitteePoolId, COMMITTEE_POOLS, CommitteeMemberRecord, CommitteeChallenge } from '../types/committee';
 import { ApiService } from '../services/api';
@@ -41,33 +42,32 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
   const challengesRef = useRef<HTMLDivElement>(null);
 
   // Open on the pool that holds a pending challenge, so a live challenge is never hidden behind the default pool.
-  const loadAllChallenges = async () => {
+  const loadAllChallenges = async (isCurrent = () => true) => {
     const res = await ApiService.getChallenges();
-    const list = res.data ?? [];
+    if (!isCurrent()) return;
+    const list = res.success ? res.data ?? [] : [];
     setAllChallenges(list);
     setSelectedPoolId(
       (cur) => cur ?? list.find((c) => c.status === 'pending_independent_review')?.poolId ?? 'whistleblowing_ethics'
     );
   };
 
-  const loadPoolData = async (poolId: CommitteePoolId) => {
-    setLoading(true);
+  const loadPoolData = async (poolId: CommitteePoolId, silent = false, isCurrent = () => true) => {
+    if (!silent) { setLoading(true); setMembers([]); setChallenges([]); }
     const [membersRes, challengesRes] = await Promise.all([
       ApiService.getCommitteePool(poolId),
       ApiService.getChallenges(poolId)
     ]);
-    setMembers(membersRes.data ?? []);
-    setChallenges(challengesRes.data ?? []);
+    if (!isCurrent()) return;
+    setMembers(membersRes.success ? membersRes.data ?? [] : []);
+    setChallenges(challengesRes.success ? challengesRes.data ?? [] : []);
     setLoading(false);
   };
 
-  useEffect(() => {
-    loadAllChallenges();
-  }, [currentUser.id]);
-
-  useEffect(() => {
-    if (selectedPoolId) loadPoolData(selectedPoolId);
-  }, [selectedPoolId, currentUser.id]);
+  useAutoRefresh(isCurrent => loadAllChallenges(isCurrent), [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => {
+    if (selectedPoolId) return loadPoolData(selectedPoolId, !initial, isCurrent);
+  }, [selectedPoolId ?? '', currentUser.id]);
 
   const refresh = () => {
     loadAllChallenges();
@@ -150,7 +150,7 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
             </span>{' '}
             Findings on the case wait for the decision.
           </span>
-          <span className="shrink-0 font-semibold">Review ↓</span>
+          <span className="shrink-0 font-semibold">Review â†“</span>
         </button>
       )}
 
@@ -186,7 +186,7 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
                           <span className={`chip ${st.cls}`}>{st.label}</span>
                         </div>
                         <p className="truncate text-xs text-muted">
-                          {m.roleTitle} · {m.department}
+                          {m.roleTitle} Â· {m.department}
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                           {risk && <span className={`chip ${risk.cls}`}>{risk.label}</span>}

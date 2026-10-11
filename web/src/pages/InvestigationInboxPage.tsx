@@ -15,7 +15,7 @@ export function InvestigationInboxPage() {
     <div className="space-y-5">
       <PageHeader
         title="Investigation Inbox"
-        description="Two-way messages with anonymous reporters, one channel per case."
+        description="Messages with anonymous reporters, one channel per case. New replies appear automatically."
       />
 
       {/* Case picker on small screens */}

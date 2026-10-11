@@ -1,3 +1,4 @@
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { useEffect, useState } from 'react';
 import { CheckCircle2, FileDown, Gavel, RefreshCw } from 'lucide-react';
 import { ApiService } from '../../services/api';
@@ -155,12 +156,12 @@ export function RelatedCasesPanel({ complaintId, onOpenCase }: { complaintId: st
   const [related, setRelated] = useState<RelatedCases | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable'>('loading');
 
-  useEffect(() => {
-    setState('loading');
-    ApiService.getRelatedCases(complaintId).then((res) => {
-      setRelated(res.success ? res.data ?? null : null);
-      setState(res.success ? 'ok' : 'unavailable');
-    });
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) { setState('loading'); setRelated(null); }
+    const res = await ApiService.getRelatedCases(complaintId);
+    if (!isCurrent()) return;
+    setRelated(res.success ? res.data ?? null : null);
+    setState(res.success ? 'ok' : 'unavailable');
   }, [complaintId, currentUser.id]);
 
   const similar = related?.similar ?? [];

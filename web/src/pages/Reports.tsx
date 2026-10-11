@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { useState } from 'react';
 import { FolderOpen, RefreshCw, SearchX } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { ApiService } from '../services/api';
@@ -25,18 +26,15 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  const loadReports = async () => {
-    setLoading(true);
-    setError(null);
+  const loadReports = async (silent = false, isCurrent = () => true) => {
+    if (!silent) { setLoading(true); setComplaints([]); }
     const res = await ApiService.getReports();
-    if (res.success && res.data) setComplaints(res.data);
-    else setError(res.error || 'Could not load complaints.');
+    if (!isCurrent()) return;
+    setError(res.success ? null : res.error || 'Could not load complaints.');
+    setComplaints(res.success ? res.data ?? [] : []);
     setLoading(false);
   };
-
-  useEffect(() => {
-    loadReports();
-  }, [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => loadReports(!initial, isCurrent), [currentUser.id]);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -60,7 +58,7 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
         title="Complaints Queue"
         description="Anonymous reports you are authorised to see. Reporter identities are never shown; tokens are case-specific."
         actions={
-          <button className="btn btn-secondary btn-sm" onClick={loadReports} disabled={loading}>
+          <button className="btn btn-secondary btn-sm" onClick={() => void loadReports()} disabled={loading}>
             <RefreshCw className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
@@ -99,7 +97,7 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
             role="alert"
             title="Complaints could not be loaded"
             action={
-              <button className="btn btn-secondary btn-sm" onClick={loadReports}>
+              <button className="btn btn-secondary btn-sm" onClick={() => void loadReports()}>
                 <RefreshCw />
                 Retry
               </button>

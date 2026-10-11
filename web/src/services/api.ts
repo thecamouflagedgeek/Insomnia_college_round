@@ -1,3 +1,4 @@
+import { refreshDashboard } from '../hooks/useAutoRefresh';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge, CommitteeMemberRecord, CommitteePoolId } from '../types/committee';
 import { WitnessInvitation, WitnessQuorumSummary } from '../types/witness';
@@ -110,9 +111,12 @@ export class ApiService {
   private static async live<T>(path: string, init: RequestInit = {}): Promise<ApiResponse<T> | null> {
     if (this.forceMock) return null;
     const timestamp = () => new Date().toISOString();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch(`${this.apiBaseUrl}/hr${path}`, {
         ...init,
+        signal: init.signal ?? controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'X-Stub-Admin': this.stubAdminKey,
@@ -126,10 +130,13 @@ export class ApiService {
         const error = typeof detail === 'string' ? detail : detail?.message || detail?.reason || `HTTP ${res.status}`;
         return { success: false, status: res.status, error, source: 'real_backend', timestamp: timestamp() };
       }
+      if (init.method && init.method !== 'GET') queueMicrotask(refreshDashboard);
       return { success: true, status: res.status, data: body as T, source: 'real_backend', timestamp: timestamp() };
     } catch {
       if (this.mockFallback) return null;
       return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: timestamp() };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

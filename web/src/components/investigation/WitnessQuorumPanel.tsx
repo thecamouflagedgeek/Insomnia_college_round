@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useState } from 'react';
 import { CheckCircle2, Clock, Copy, Check, Lock, RefreshCw, Send, UserRound, Users, XCircle } from 'lucide-react';
 import { WitnessInvitation, WitnessQuorumSummary } from '../../types/witness';
 import { ApiService } from '../../services/api';
@@ -33,12 +34,13 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
 
   const isAssignedInvestigator = currentUser.role === 'assigned_investigator' || currentUser.role === 'administrator';
 
-  const loadData = async () => {
+  const loadData = async (isCurrent = () => true) => {
     setError(null);
     const [invRes, sumRes] = await Promise.all([
       ApiService.getWitnessInvitations(complaintId),
       ApiService.getWitnessQuorumSummary(complaintId)
     ]);
+    if (!isCurrent()) return;
     if (invRes.success && invRes.data) setInvitations(invRes.data);
     else {
       setInvitations([]);
@@ -47,12 +49,9 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     setSummary(sumRes.success && sumRes.data ? sumRes.data : null);
   };
 
-  useEffect(() => {
-    setIssuedCode(null);
-    setInviteError(null);
-    setInvitations(null);
-    setSummary(null);
-    loadData();
+  useAutoRefresh((isCurrent, initial) => {
+    if (initial) { setIssuedCode(null); setInviteError(null); setInvitations(null); setSummary(null); setNewAlias(''); }
+    return loadData(isCurrent);
   }, [complaintId, currentUser.id]);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -93,15 +92,16 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
 
   return (
     <div className="space-y-5">
+      <p className="text-xs text-muted">Give each witness their private code to enter in the employee app. Responses update automatically. Push notifications and statement collection are not connected; participation is not proof of misconduct.</p>
       <Section
         icon={<Users />}
         title="Witness quorum"
-        description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
+        description="Voluntary witness participation. Not responding is never treated as evidence either way."
         action={
           summary?.quorumMet ? (
             <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Quorum reached
+              Participation quorum reached
             </span>
           ) : !isAssignedInvestigator ? (
             <span className="chip bg-sunken text-muted" title="Participation details are visible to the assigned investigator only">

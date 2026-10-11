@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useState } from 'react';
 import { EyeOff, HeartHandshake } from 'lucide-react';
 import { ApiService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -14,17 +15,12 @@ export function ReflectReformCard() {
   const [data, setData] = useState<ReflectReformInsights | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable' | 'forbidden'>('loading');
 
-  useEffect(() => {
-    setState('loading');
-    ApiService.getInsights().then((res) => {
-      if (res.success && res.data) {
-        setData(res.data);
-        setState('ok');
-      } else {
-        setData(null);
-        setState(res.status === 403 ? 'forbidden' : 'unavailable');
-      }
-    });
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) { setState('loading'); setData(null); }
+    const res = await ApiService.getInsights();
+    if (!isCurrent()) return;
+    setData(res.success ? res.data ?? null : null);
+    setState(res.success ? 'ok' : res.status === 403 ? 'forbidden' : 'unavailable');
   }, [currentUser.id]);
 
   return (

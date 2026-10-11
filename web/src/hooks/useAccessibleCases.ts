@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from './useAutoRefresh';
+import { useState } from 'react';
 import { ApiService } from '../services/api';
 import { Complaint } from '../types/complaint';
 import { useAuth } from './useAuth';
@@ -10,14 +11,14 @@ export function useAccessibleCases() {
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
-    ApiService.getReports().then((res) => {
-      const list = res.data || [];
-      setCases(list);
-      setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
-      setLoading(false);
-    });
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) { setCases([]); setLoading(true); }
+    const res = await ApiService.getReports();
+    if (!isCurrent()) return;
+    const list = res.success ? res.data ?? [] : [];
+    setCases(list);
+    setSelectedCaseId(cur => list.some(c => c.id === cur) ? cur : list[0]?.id ?? '');
+    setLoading(false);
   }, [currentUser.id]);
 
   return { cases, selectedCaseId, setSelectedCaseId, loading };

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { useState } from 'react';
 import { FileStack, RefreshCw, GitCompareArrows, Layers, ShieldAlert, UserRoundSearch } from 'lucide-react';
 import { ApiService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -30,21 +31,14 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
   const [error, setError] = useState('');
 
   // Live: the correlation + repeat-allegation engines over the cases this user may access.
-  const load = () => {
-    setState('loading');
-    ApiService.getPatterns().then((res) => {
-      if (res.success && res.data) {
-        setLive(res.data);
-        setState('live');
-      } else {
-        setLive(null);
-        setError(res.error || 'Pattern analysis is unavailable.');
-        setState(res.status === 403 ? 'forbidden' : 'error');
-      }
-    });
+  const load = async (silent = false, isCurrent = () => true) => {
+    if (!silent) { setState('loading'); setLive(null); }
+    const res = await ApiService.getPatterns();
+    if (!isCurrent()) return;
+    if (res.success && res.data) { setLive(res.data); setState('live'); }
+    else { setLive(null); setError(res.error || 'Pattern analysis is unavailable.'); setState(res.status === 403 ? 'forbidden' : 'error'); }
   };
-
-  useEffect(load, [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => load(!initial, isCurrent), [currentUser.id]);
 
   const clusters: Cluster[] = live
     ? [
@@ -91,7 +85,7 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
           role="alert"
           title="Patterns could not be loaded"
           action={
-            <button className="btn btn-secondary btn-sm" onClick={load}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void load()}>
               <RefreshCw />
               Retry
             </button>

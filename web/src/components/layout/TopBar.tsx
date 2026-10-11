@@ -135,6 +135,7 @@ export function TopBar({ currentPage, onNavigate, pendingChallengesCount }: TopB
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-attn-500 ring-2 ring-surface" />
             )}
           </button>
+          <span className="hidden 2xl:inline text-xs text-muted">Updates automatically</span>
           <PersonaMenu />
         </div>
       </div>

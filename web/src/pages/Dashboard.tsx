@@ -1,3 +1,4 @@
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -28,7 +29,7 @@ import { AuditStatusChip } from '../components/audit/AuditStatusChip';
 import { NavPage } from '../components/layout/nav';
 import { useAuth } from '../hooks/useAuth';
 import { ROLE_LABEL } from '../lib/people';
-import { SEVERITY_ORDER, STATUS_LABEL, isOpen, relativeTime } from '../lib/format';
+import { SEVERITY_ORDER, isOpen, relativeTime } from '../lib/format';
 
 interface DashboardProps {
   onNavigate: (page: NavPage, selectedCaseId?: string) => void;
@@ -74,14 +75,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setHiddenBelow((cur) => (cur === next ? cur : next));
   };
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (silent = false, isCurrent = () => true) => {
+    if (!silent) { setLoading(true); setComplaints([]); setWitness(null); }
     setError(null);
     const [cRes, chRes, aRes] = await Promise.all([
       ApiService.getReports(),
       ApiService.getChallenges(),
       ApiService.getAuditEvents()
     ]);
+    if (!isCurrent()) return;
     if (!cRes.success) setError(cRes.error || 'Could not load cases.');
     const cases = cRes.data ?? [];
     setComplaints(cases);
@@ -92,6 +94,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     // Witness responses still pending, summed over open cases this role can see.
     const open = cases.filter((c) => isOpen(c.status));
     const summaries = await Promise.all(open.map((c) => ApiService.getWitnessQuorumSummary(c.id)));
+    if (!isCurrent()) return;
     const ok = summaries.filter((s) => s.success && s.data);
     setWitness({
       pending: ok.reduce((n, s) => n + (s.data?.pending ?? 0), 0),
@@ -100,10 +103,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     });
   };
 
-  useEffect(() => {
-    setWitness(null);
-    loadData();
-  }, [currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => loadData(!initial, isCurrent), [currentUser.id]);
 
   useEffect(() => {
     measureHidden();
@@ -181,7 +181,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           role="alert"
           title="Cases could not be loaded"
           action={
-            <button className="btn btn-secondary btn-sm" onClick={loadData}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void loadData()}>
               <RefreshCw />
               Retry
             </button>

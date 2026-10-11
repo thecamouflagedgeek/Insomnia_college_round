@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useAuth } from '../../hooks/useAuth';
 import { CommitteeMemberRecord } from '../../types/committee';
 import { ApiService } from '../../services/api';
 import { Users, AlertTriangle, CheckCircle, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export function CommitteeAssignmentPanel() {
+  const { currentUser } = useAuth();
   const [pool, setPool] = useState<CommitteeMemberRecord[]>([]);
 
-  useEffect(() => {
-    ApiService.getCommitteePool().then((res) => {
-      if (res.data) setPool(res.data);
-    });
-  }, []);
+  useAutoRefresh(async (isCurrent) => {
+    const res = await ApiService.getCommitteePool();
+    if (isCurrent()) setPool(res.success ? res.data ?? [] : []);
+  }, [currentUser.id]);
 
   return (
     <div className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm">

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, FileText, Lock, Scale } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge } from '../types/committee';
@@ -40,27 +41,27 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchCase = async () => {
-    setLoading(true);
-    setAccessError(null);
+  const accessDenied = useRef(false);
+  const fetchCase = async (silent = false, isCurrent = () => true) => {
+    if (silent && accessDenied.current) return;
+    if (!silent) { accessDenied.current = false; setLoading(true); setComplaint(null); setChallenge(null); }
+    if (!complaintId) { setLoading(false); return; }
     const res = await ApiService.getReport(complaintId);
+    if (!isCurrent()) return;
     if (res.success && res.data) {
       setComplaint(res.data);
+      setAccessError(null);
       const ch = await ApiService.getChallenges();
-      setChallenge(
-        ch.data?.find((c) => c.complaintId === complaintId && c.status === 'pending_independent_review') ?? null
-      );
+      if (!isCurrent()) return;
+      setChallenge(ch.data?.find(c => c.complaintId === complaintId && c.status === 'pending_independent_review') ?? null);
     } else {
-      setComplaint(null);
+      accessDenied.current = res.status === 401 || res.status === 403;
+      setComplaint(null); setChallenge(null);
       setAccessError(res.error || `You are not authorised to view case ${complaintId}.`);
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    if (complaintId) fetchCase();
-    else setLoading(false);
-  }, [complaintId, currentUser.id]);
+  useAutoRefresh((isCurrent, initial) => fetchCase(!initial, isCurrent), [complaintId, currentUser.id]);
 
   const back = (
     <button className="btn btn-ghost btn-sm -ml-2" onClick={onBack}>
@@ -96,7 +97,7 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
   }
 
   if (accessError) {
-    return <AccessDeniedBanner caseId={complaintId} errorMessage={accessError} onBack={onBack} onRetry={fetchCase} />;
+    return <AccessDeniedBanner caseId={complaintId} errorMessage={accessError} onBack={onBack} onRetry={() => void fetchCase()} />;
   }
 
   if (!complaint) return null;
