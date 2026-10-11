@@ -1,17 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  ChevronRight,
-  FileSearch,
   FolderOpen,
-  Gavel,
   History,
   Radio,
   RefreshCw,
-  Scale,
-  Siren
+  Scale
 } from 'lucide-react';
 import { Complaint } from '../types/complaint';
 import { CommitteeChallenge } from '../types/committee';
@@ -41,7 +37,7 @@ interface WitnessTally {
 
 interface NextAction {
   key: string;
-  icon: ReactNode;
+  kind: string;
   tone: 'attn' | 'brand' | 'danger' | 'teal';
   title: string;
   detail: string;
@@ -57,6 +53,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [witness, setWitness] = useState<WitnessTally | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [hiddenBelow, setHiddenBelow] = useState(0);
+
+  // Count actions scrolled out of view so the panel can say so instead of silently clipping them.
+  const measureHidden = () => {
+    const el = listRef.current;
+    if (!el) return;
+    const bottom = el.getBoundingClientRect().bottom;
+    const items = Array.from(el.querySelectorAll('li'));
+    const next = items.filter((li) => {
+      const r = li.getBoundingClientRect();
+      return r.top + r.height / 2 > bottom;
+    }).length;
+    setHiddenBelow((cur) => (cur === next ? cur : next));
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -89,6 +100,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     loadData();
   }, [currentUser.id]);
 
+  useEffect(() => {
+    measureHidden();
+    window.addEventListener('resize', measureHidden);
+    return () => window.removeEventListener('resize', measureHidden);
+  });
+
   const open = complaints.filter((c) => isOpen(c.status));
   const urgent = open.filter((c) => c.severity === 'critical' || c.severity === 'high');
   const pendingChallenges = challenges.filter((c) => c.status === 'pending_independent_review');
@@ -107,7 +124,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const actions: NextAction[] = [
     ...pendingChallenges.map<NextAction>((ch) => ({
       key: `ch-${ch.id}`,
-      icon: <Scale />,
+      kind: 'Challenge',
       tone: 'attn',
       title: canAdjudicate
         ? `Decide challenge to ${ch.challengedMemberName}`
@@ -120,7 +137,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       .filter((c) => c.status === 'submitted')
       .map<NextAction>((c) => ({
         key: `new-${c.id}`,
-        icon: <FileSearch />,
+        kind: 'New report',
         tone: 'brand',
         title: 'Triage new report',
         detail: c.title,
@@ -131,16 +148,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       .filter((c) => c.severity === 'critical' && c.status !== 'submitted')
       .map<NextAction>((c) => ({
         key: `crit-${c.id}`,
-        icon: <Siren />,
+        kind: 'Critical',
         tone: 'danger',
-        title: `Critical: ${c.title}`,
+        title: c.title,
         detail: c.requiredNextAction,
         caseId: c.id,
         onOpen: () => onNavigate('report_details', c.id)
       })),
     ...(witness?.casesWithPending ?? []).map<NextAction>((id) => ({
       key: `w-${id}`,
-      icon: <Radio />,
+      kind: 'Witnesses',
       tone: 'brand',
       title: 'Witness replies outstanding',
       detail: complaints.find((c) => c.id === id)?.title ?? 'Voluntary invitations awaiting a reply',
@@ -242,56 +259,71 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         {/* At xl the panel takes the hero's height (row height comes from the hero) and its list scrolls. */}
         <div className="relative xl:col-span-4">
-        <section aria-labelledby="actions-title" className="flex flex-col rounded-[var(--radius-card)] bg-night p-5 text-white shadow-[var(--shadow-raised)] sm:p-6 xl:absolute xl:inset-0">
-          <div className="flex items-center justify-between gap-2">
-            <h2 id="actions-title" className="text-base font-semibold">Next actions</h2>
-            {!loading && (
-              <span className="chip bg-white/10 text-white tabular">
-                {actions.length} {actions.length === 1 ? 'item' : 'items'}
-              </span>
-            )}
-          </div>
-          <div className="mt-3 min-h-0 flex-1 overflow-y-auto" tabIndex={0} aria-label="Next actions list">
-            {loading ? (
-              <div className="space-y-3">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-12 animate-pulse rounded-xl bg-white/5" />
-                ))}
-              </div>
-            ) : actions.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center py-8 text-center">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/20 text-teal-100">
-                  <Gavel className="h-5 w-5" />
-                </span>
-                <p className="mt-3 text-sm font-semibold">Nothing needs your action</p>
-                <p className="mt-1 max-w-[16rem] text-xs text-white/60">
-                  New reports, challenges and witness replies will appear here.
-                </p>
-              </div>
-            ) : (
-              <ul className="stagger space-y-0.5">
-                {actions.map((a) => (
-                  <li key={a.key}>
-                    <button
-                      onClick={a.onOpen}
-                      className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.07]"
-                    >
-                      <ActionIcon tone={a.tone}>{a.icon}</ActionIcon>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[0.8125rem] font-semibold leading-snug">{a.title}</span>
-                        <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs leading-snug text-white/70">
-                          <span>{a.detail}</span>
-                          <span className="font-mono text-[0.6875rem] text-white/45">{a.caseId}</span>
+          <section
+            aria-labelledby="actions-title"
+            className="card flex flex-col p-5 sm:p-6 xl:absolute xl:inset-0"
+          >
+            <div className="flex items-baseline justify-between gap-2 border-b border-line pb-2.5">
+              <h2 id="actions-title" className="text-base font-semibold text-ink">
+                Next actions
+                {!loading && <span className="ml-2 font-medium text-muted tabular">{actions.length}</span>}
+              </h2>
+              <span className="text-xs text-muted">In priority order</span>
+            </div>
+            <div
+              ref={listRef}
+              onScroll={measureHidden}
+              className="-mx-5 min-h-0 flex-1 overflow-y-auto sm:-mx-6"
+              tabIndex={0}
+              aria-label="Next actions list"
+            >
+              {loading ? (
+                <div className="space-y-4 px-5 pt-4 sm:px-6">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="space-y-2">
+                      <Skeleton className="h-3 w-20" />
+                      <Skeleton className="h-4 w-4/5" />
+                    </div>
+                  ))}
+                </div>
+              ) : actions.length === 0 ? (
+                <div className="px-5 pt-6 sm:px-6">
+                  <p className="text-sm font-semibold text-ink">Nothing needs your action</p>
+                  <p className="mt-1 max-w-[18rem] text-xs text-muted">
+                    New reports, challenges and witness replies will appear here.
+                  </p>
+                </div>
+              ) : (
+                <ol className="divide-y divide-line">
+                  {actions.map((a) => (
+                    <li key={a.key}>
+                      <button
+                        onClick={a.onOpen}
+                        className="group block w-full px-5 py-2.5 text-left transition-colors hover:bg-sunken focus-visible:bg-sunken sm:px-6"
+                      >
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className={`text-[0.6875rem] font-semibold ${KIND_TONE[a.tone]}`}>{a.kind}</span>
+                          <span className="case-id text-[0.6875rem] font-medium text-muted">{a.caseId}</span>
                         </span>
-                      </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-white/40 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                        <span className="mt-0.5 block text-[0.8125rem] font-semibold leading-snug text-ink group-hover:text-brand-700">
+                          {a.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-muted">{a.detail}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+            {hiddenBelow > 0 && (
+              <button
+                onClick={() => listRef.current?.scrollBy({ top: listRef.current.clientHeight * 0.8, behavior: 'smooth' })}
+                className="-mx-5 -mb-2 border-t border-line px-5 pt-2.5 text-left text-xs font-semibold text-brand-700 hover:underline sm:-mx-6 sm:px-6"
+              >
+                {hiddenBelow} more below
+              </button>
             )}
-          </div>
-        </section>
+          </section>
         </div>
       </div>
 
@@ -326,7 +358,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           )}
         </Section>
 
-        <Section className="lg:col-span-4" title="Case progress" description="Where accessible cases sit in the process.">
+        <Section
+          className="flex flex-col lg:col-span-4"
+          bodyClassName="flex flex-1 flex-col"
+          title="Case progress"
+          description="Where accessible cases sit in the process."
+        >
           {loading ? (
             <div className="space-y-3">
               <Skeleton className="h-8 w-1/2" />
@@ -436,15 +473,12 @@ function HeroStat({
   );
 }
 
-function ActionIcon({ tone, children }: { tone: NextAction['tone']; children: ReactNode }) {
-  const cls = {
-    attn: 'bg-attn-500/20 text-attn-100',
-    brand: 'bg-brand-500/30 text-brand-100',
-    danger: 'bg-danger-500/25 text-danger-100',
-    teal: 'bg-teal-500/20 text-teal-100'
-  }[tone];
-  return <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4 ${cls}`}>{children}</span>;
-}
+const KIND_TONE: Record<NextAction['tone'], string> = {
+  attn: 'text-attn-600',
+  brand: 'text-brand-600',
+  danger: 'text-danger-600',
+  teal: 'text-teal-700'
+};
 
 const STAGES: Array<{ key: Complaint['status'][]; label: string; color: string }> = [
   { key: ['submitted'], label: STATUS_LABEL.submitted, color: 'bg-brand-200' },
@@ -461,27 +495,27 @@ function StageBreakdown({ complaints, resolved }: { complaints: Complaint[]; res
   }
   const rows = STAGES.map((s) => ({ ...s, count: complaints.filter((c) => s.key.includes(c.status)).length }));
   return (
-    <div>
-      <p className="text-ink">
-        <span className="text-[1.75rem] font-bold tracking-tight tabular">{resolved}</span>
-        <span className="text-sm text-muted"> of {total} resolved</span>
+    <div className="flex flex-1 flex-col">
+      <p className="flex items-baseline gap-1.5 border-b border-line pb-4 text-ink">
+        <span className="text-[2.25rem] font-bold leading-none tracking-tight tabular">{resolved}</span>
+        <span className="text-sm text-muted">of {total} resolved</span>
       </p>
-      <div className="mt-3 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-sunken" role="img" aria-label={`${resolved} of ${total} cases resolved`}>
-        {rows
-          .filter((r) => r.count > 0)
-          .map((r) => (
-            <span key={r.label} className={`bar-grow ${r.color}`} style={{ width: `${(r.count / total) * 100}%` }} />
-          ))}
-      </div>
-      <ul className="mt-5 space-y-3">
+      {/* One track per stage, each scaled to the total, so stages compare at a glance. */}
+      <ol className="flex flex-1 flex-col justify-around gap-3 pt-4" aria-label="Cases by stage">
         {rows.map((r) => (
-          <li key={r.label} className="flex items-center gap-3 text-[0.8125rem]">
-            <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm ${r.color}`} />
-            <span className="flex-1 text-ink-soft">{r.label}</span>
-            <span className="w-6 text-right font-semibold text-ink tabular">{r.count}</span>
+          <li key={r.label}>
+            <div className="flex items-baseline justify-between text-[0.8125rem]">
+              <span className={r.count ? 'text-ink' : 'text-muted'}>{r.label}</span>
+              <span className={`font-semibold tabular ${r.count ? 'text-ink' : 'text-muted'}`}>{r.count}</span>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full bg-sunken">
+              {r.count > 0 && (
+                <div className={`bar-grow h-full rounded-full ${r.color}`} style={{ width: `${(r.count / total) * 100}%` }} />
+              )}
+            </div>
           </li>
         ))}
-      </ul>
+      </ol>
     </div>
   );
 }
