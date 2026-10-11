@@ -4,6 +4,7 @@ import '../integration/live_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
 
 class Report {
   Report({
@@ -237,10 +238,26 @@ abstract interface class EmployeeRepository {
   Future<List<AuditEvent>> audit(Report report);
 }
 
+class SyncWarningException implements Exception {
+  const SyncWarningException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class DemoRepository implements EmployeeRepository, StoryReportRepository {
+  DemoRepository() {
+    const envBase = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    final base = envBase.isNotEmpty
+        ? envBase
+        : ((dotenv.isInitialized ? dotenv.env['API_BASE_URL'] : null) ?? 'http://10.0.2.2:8000');
+    _api = ApiService(base);
+  }
+  late final ApiService _api;
+
   final _reports = <Report>[
     Report(
-      id: 'DEMO-892',
+      id: 'INC-892',
       category: 'Abuse of Authority',
       title: 'Repeated Retaliation and Rating Downgrade Post-Safety Disclosure',
       description:
@@ -262,7 +279,7 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
         ),
       ),
     Report(
-      id: 'DEMO-741',
+      id: 'INC-741',
       category: 'Sexual Harassment',
       title: 'Persistent Inappropriate Advances and Promotion Coercion',
       description:
@@ -275,7 +292,7 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
       ],
     )..status = 'Investigating',
     Report(
-      id: 'DEMO-650',
+      id: 'INC-650',
       category: 'Discrimination',
       title: 'Systemic Exclusion in Compensation Bands and Promotion Velocity',
       description:
@@ -288,7 +305,7 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
       ],
     )..status = 'Committee assigned',
     Report(
-      id: 'DEMO-512',
+      id: 'INC-512',
       category: 'Whistleblowing & Bribery',
       title: 'Vendor Procurement Kickback and Subcontracting Manipulation',
       description:
@@ -315,7 +332,7 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
   Future<Report> submitStory(StorySubmission submission) async {
     await _delay();
     final report = Report(
-      id: 'DEMO-${1042 + _reports.length}',
+      id: 'INC-${1042 + _reports.length}',
       category: submission.suggestedCategories.isEmpty
           ? 'Uncertain'
           : submission.suggestedCategories.join(' · '),
@@ -350,7 +367,7 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
   ) async {
     await _delay();
     final report = Report(
-      id: 'DEMO-${1042 + _reports.length}',
+      id: 'INC-${1042 + _reports.length}',
       category: category,
       title: title,
       description: description,
@@ -369,21 +386,90 @@ class DemoRepository implements EmployeeRepository, StoryReportRepository {
     String explanation,
   ) async {
     await _delay();
-    report.challenges.add(
-      Challenge(
-        member,
-        reason,
-        explanation,
-        status: 'Under challenge — pending review',
-      ),
+
+    final token = 'tok_${report.id.toLowerCase().replaceAll('-', '')}_demo';
+    _api.setCredential(token);
+    final memberId = report.committee.firstWhere(
+      (m) => m.name == member || m.id == member,
+      orElse: () => CommitteeMember(member, member, ''),
+    ).id;
+
+    bool synced = false;
+    String? syncError;
+    try {
+      final res = await _api.client.post(
+        '/reports/${Uri.encodeComponent(report.id)}/challenge',
+        data: {
+          'payload': jsonEncode({
+            'member_id': memberId,
+            'reason': reason,
+            'explanation': explanation,
+            'client_nonce': 'nonce_mobile_sync',
+          }),
+        },
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        synced = true;
+      } else {
+        syncError = 'HTTP ${res.statusCode}';
+      }
+    } catch (e) {
+      syncError = e.toString();
+    }
+
+    // Upsert local challenge to avoid duplicate entries when retrying
+    final existingIdx = report.challenges.indexWhere((c) => c.member == member);
+    final ch = Challenge(
+      member,
+      reason,
+      explanation,
+      status: synced
+          ? 'Under challenge — pending review'
+          : 'Local demo only — backend not synced',
     );
+    if (existingIdx >= 0) {
+      report.challenges[existingIdx] = ch;
+    } else {
+      report.challenges.add(ch);
+    }
     report.status = 'Under challenge';
+
+    if (!synced) {
+      throw SyncWarningException(
+        'Saved to local demo session, but backend synchronization failed ($syncError). Not synced to web dashboard.',
+      );
+    }
   }
 
   @override
   Future<void> send(Report report, String text) async {
     await _delay();
-    report.messages.add(Note('You', text));
+    final token = 'tok_${report.id.toLowerCase().replaceAll('-', '')}_demo';
+    _api.setCredential(token);
+
+    bool synced = false;
+    String? syncError;
+    try {
+      final res = await _api.client.post(
+        '/reports/${Uri.encodeComponent(report.id)}/messages',
+        data: {'text': text},
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        synced = true;
+      } else {
+        syncError = 'HTTP ${res.statusCode}';
+      }
+    } catch (e) {
+      syncError = e.toString();
+    }
+
+    report.messages.add(Note(synced ? 'You' : 'You (offline — not synced)', text));
+
+    if (!synced) {
+      throw SyncWarningException(
+        'Saved to local demo session, but backend synchronization failed ($syncError). Not synced to web dashboard.',
+      );
+    }
   }
 
   @override

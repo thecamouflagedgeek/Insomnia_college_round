@@ -38,6 +38,10 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
     setMessages(null);
     setSendError(null);
     loadMessages();
+    const timer = setInterval(() => {
+      loadMessages();
+    }, 4000);
+    return () => clearInterval(timer);
   }, [complaintId, currentUser.id]);
 
   useEffect(() => {

@@ -144,7 +144,7 @@ class StubStore:
     """Process-local workflow state, optionally mirrored to a JSON file so a restart keeps cases whose audit
     events already live in Postgres/on-chain. Never stores reporter identity: only a hash of the case token."""
 
-    def __init__(self, path: str | None = None, encryption_key: bytes | None = None):
+    def __init__(self, path: str | None = None, encryption_key: bytes | None = None, seed_demo: bool = True):
         self._path = Path(path) if path else None
         if self._path and encryption_key is None:
             raise RuntimeError("STUB_STATE_PATH needs ENCRYPTION_KEY: the state file holds report content")
@@ -155,6 +155,110 @@ class StubStore:
         self.invitations: dict[str, Invitation] = {}
         if self._path and self._path.exists():
             self._load()
+        if not self.cases and seed_demo:
+            self._seed()
+            if self._path:
+                self.save()
+
+    @property
+    def is_durable(self) -> bool:
+        return self._path is not None and self._crypto is not None
+
+    @property
+    def path(self) -> Path | None:
+        return self._path
+
+    def _seed(self) -> None:
+        c892 = Case(
+            case_id="INC-892",
+            token_hash=token_hash("tok_inc892_demo"),
+            raw_payload=json.dumps({
+                "category": "Retaliation",
+                "title": "Repeated Retaliation and Rating Downgrade Post-Safety Disclosure",
+                "description": "Reporting manager systematically stripped project responsibilities, scheduled punitive isolation reviews, and threatened immigration sponsorship status following disclosure of safety audit manipulation in Operations.",
+                "incident_date": "2026-10-09",
+                "client_nonce": "nonce_inc892_seed",
+            }),
+            status="under_challenge",
+            created_at="2026-10-09T08:30:00Z",
+            committee=[committee_entry("usr_marcus"), committee_entry("usr_david"), committee_entry("usr_priya")],
+            investigator_id=DEFAULT_INVESTIGATOR,
+            nullifier="0x1904bbca418023190afb201199a4c8109",
+            proof_tx="0x9482f012cc8a41289df71900bfa2210499e984210aef",
+            severity={"level": "critical", "signals": ["Direct retaliation risk", "Immigration vulnerability"]},
+            evidence=[
+                Evidence("ev-892-1", "redacted_performance_overrides_q3.pdf", "application/pdf", 2516582, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", ""),
+                Evidence("ev-892-2", "secure_chat_export_signed_logs.json", "application/json", 491520, "4a6b22194d3e8e1248086202c4b22c2a4980bb66971fcb4e39a55225ef6eb792", "")
+            ],
+            challenges=[
+                ChallengeRec("CH-104", "usr_marcus", "Professional relationship", "Marcus Vance is the direct skip-level manager of the accused party and directly oversees the departmental bonus pool cited in the alleged retaliation scheme. Appointing him to the adjudicating committee creates an insurmountable conflict of interest.", "pending_review", "0x9948201bc019248102948bc0192481029481092a", "2026-10-09T10:14:00Z")
+            ],
+            messages=[
+                Message("msg-1", "investigator", "Secure channel established. Can you confirm if you still have local copies of the quarterly evaluation drafts prior to the override?", "2026-10-09T14:10:00Z"),
+                Message("msg-2", "you", "Yes, cryptographic hashes of the original drafts with supervisor sign-off have been committed to the secure evidence vault.", "2026-10-09T14:28:00Z")
+            ]
+        )
+        c741 = Case(
+            case_id="INC-741",
+            token_hash=token_hash("tok_inc741_demo"),
+            raw_payload=json.dumps({
+                "category": "Sexual Harassment",
+                "title": "Persistent Inappropriate Advances and Promotion Coercion",
+                "description": "Senior director repeatedly made unsolicited advances during off-site symposium and linked executive sponsorship for upcoming promotion committee to compliance.",
+                "incident_date": "2026-10-05",
+                "client_nonce": "nonce_inc741_seed",
+            }),
+            status="investigating",
+            created_at="2026-10-05T14:15:00Z",
+            committee=[committee_entry("usr_david"), committee_entry("usr_maya"), committee_entry("usr_priya")],
+            investigator_id=DEFAULT_INVESTIGATOR,
+            nullifier="0x4990cba190014bf99214a802911bca09",
+            proof_tx="0x5512bca01994afc09121a884efb204918230bc71a804",
+            severity={"level": "critical", "signals": ["Quid pro quo coercion", "Leadership hierarchy"]}
+        )
+        c650 = Case(
+            case_id="INC-650",
+            token_hash=token_hash("tok_inc650_demo"),
+            raw_payload=json.dumps({
+                "category": "Discrimination",
+                "title": "Systemic Exclusion in Compensation Bands and Promotion Velocity",
+                "description": "Documentation showing minority engineers systematically clustered in lower compensation tier bands despite equivalent tenure and superior peer review distributions.",
+                "incident_date": "2026-10-02",
+                "client_nonce": "nonce_inc650_seed",
+            }),
+            status="committee_assigned",
+            created_at="2026-10-02T11:00:00Z",
+            committee=[committee_entry("usr_kenneth"), committee_entry("usr_sandra"), committee_entry("usr_tariq")],
+            investigator_id=DEFAULT_INVESTIGATOR,
+            nullifier="0x884019ba400192ca488190203a9810bb",
+            proof_tx="0x33108ba1940bc201488102948bc0991aef80231bca02",
+            severity={"level": "high", "signals": ["Systemic wage disparity", "Tenure divergence"]}
+        )
+        c512 = Case(
+            case_id="INC-512",
+            token_hash=token_hash("tok_inc512_demo"),
+            raw_payload=json.dumps({
+                "category": "Fraud",
+                "title": "Vendor Procurement Kickback and Subcontracting Manipulation",
+                "description": "Procurement manager established shell consulting entity to capture non-competitive hardware procurement contracts totaling $1.2M.",
+                "incident_date": "2026-09-28",
+                "client_nonce": "nonce_inc512_seed",
+            }),
+            status="investigating",
+            created_at="2026-09-28T16:45:00Z",
+            committee=[committee_entry("usr_tariq"), committee_entry("usr_david"), committee_entry("usr_priya")],
+            investigator_id=DEFAULT_INVESTIGATOR,
+            nullifier="0x330192481092bc019248102948bc0192",
+            proof_tx="0x77102948102bc01948201948bc019248102948bc0192",
+            severity={"level": "high", "signals": ["Non-competitive procurement", "Shell vendor entity"]}
+        )
+        self.cases = {c.case_id: c for c in [c892, c741, c650, c512]}
+        self.invitations = {
+            "WIT-01": Invitation("WIT-01", "INC-892", token_hash("wit_code_1"), "Voluntary workplace investigation interview invitation.", response="accept", alias="Witness A (Senior Engineer)", invited_at="2026-10-09T09:00:00Z", responded_at="2026-10-09T11:30:00Z"),
+            "WIT-02": Invitation("WIT-02", "INC-892", token_hash("wit_code_2"), "Voluntary workplace investigation interview invitation.", response="accept", alias="Witness B (Operations Lead)", invited_at="2026-10-09T09:00:00Z", responded_at="2026-10-09T12:00:00Z"),
+            "WIT-03": Invitation("WIT-03", "INC-892", token_hash("wit_code_3"), "Voluntary workplace investigation interview invitation.", response=None, alias="Witness C (HR Associate)", invited_at="2026-10-09T09:15:00Z"),
+            "WIT-04": Invitation("WIT-04", "INC-892", token_hash("wit_code_4"), "Voluntary workplace investigation interview invitation.", response=None, alias="Witness D (Staff SRE)", invited_at="2026-10-09T09:15:00Z"),
+        }
 
     def save(self) -> None:
         if not self._path:

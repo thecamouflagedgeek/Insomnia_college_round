@@ -434,6 +434,103 @@ class DetailsScreen extends StatelessWidget {
           ],
         ),
       ),
+      SoftCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.people_alt_outlined, color: purple),
+                const SizedBox(width: 8),
+                Text(
+                  'Assigned Committee',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: report.status == 'Under challenge'
+                        ? const Color(0xFFEA580C)
+                        : (report.committee.isNotEmpty ? const Color(0xFF6B21A8) : Colors.grey.shade400),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    report.status,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (report.committee.isEmpty)
+              const Text(
+                'No committee assigned yet. Review board formation pending.',
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              for (final m in report.committee) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const CircleAvatar(
+                        radius: 14,
+                        backgroundColor: Color(0xFFF3E8FF),
+                        child: Icon(Icons.person, size: 16, color: purple),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(m.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            Text(m.role, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                            if (report.challenges.any((c) => c.member == m.name))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7ED),
+                                    border: Border.all(color: const Color(0xFFEA580C)),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.access_time, size: 12, color: Color(0xFFEA580C)),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Under challenge',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFFEA580C),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (m != report.committee.last) const Divider(height: 12),
+              ],
+          ],
+        ),
+      ),
       HintCard(
         modeText(
           'This case is local demo data. Backend acceptance, authorized actions, and evidence sealing are not available.',
@@ -569,32 +666,94 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
     super.dispose();
   }
 
-  Future<void> submit() async {
+  Future<void> _reviewAndSubmit() async {
     if (!form.currentState!.validate()) return;
+    if (member.isEmpty) {
+      feedback(context, 'Please select a committee member to challenge.');
+      return;
+    }
+    if (widget.report.challenges.any((c) => c.member == member && !c.status.contains('not synced'))) {
+      feedback(context, '$member is already under challenge on this case.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review Committee Challenge'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Case: ${widget.report.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('Challenged Member: $member', style: const TextStyle(color: purple, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('Conflict Category: $reason'),
+              const SizedBox(height: 8),
+              const Text('Explanation:', style: TextStyle(fontWeight: FontWeight.w600)),
+              Text(explanation.text.trim()),
+              const SizedBox(height: 12),
+              const Text(
+                'A challenge requests an independent review; your identity remains anonymous to the named member.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: purple),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirm & Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await submit();
+    }
+  }
+
+  Future<void> submit() async {
     setState(() => busy = true);
     try {
       await ref
           .read(repositoryProvider)
           .challenge(widget.report, member, reason, explanation.text.trim());
+      widget.report.status = 'Under challenge';
+      ref.invalidate(reportsProvider);
       if (mounted) {
         feedback(
           context,
           modeText(
-            'Demo challenge recorded. Independent review remains pending.',
+            'Challenge recorded and synchronized with backend.',
             'Challenge recorded on Polygon. An independent reviewer will decide.',
           ),
         );
+        explanation.clear();
         setState(() {});
       }
     } catch (e) {
       if (mounted) {
-        feedback(
-          context,
-          friendlyError(
-            e,
-            fallback: 'Challenge could not be submitted. Please try again.',
-          ),
-        );
+        if (e is SyncWarningException) {
+          feedback(context, e.message);
+        } else {
+          feedback(
+            context,
+            friendlyError(
+              e,
+              fallback: 'Challenge could not be submitted. Please try again.',
+            ),
+          );
+        }
+        setState(() {});
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -602,99 +761,196 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PageShell(
-    title: 'Fairness deserves\na second look.',
-    children: [
-      Text(widget.report.id),
-      const SizedBox(height: 20),
-      HintCard(
-        modeText(
-          'Fictional committee assignment. A challenge requests an independent review; it does not reassign a member.',
-          'A challenge is anonymous and goes to an independent reviewer, not to the member you name. If it is upheld, the member is replaced and loses access to your case.',
-        ),
-      ),
-      Form(
-        key: form,
-        child: Column(
+  Widget build(BuildContext context) {
+    final alreadyChallenged = widget.report.challenges.any((c) => c.member == member && !c.status.contains('not synced'));
+    return PageShell(
+      title: 'Fairness deserves\na second look.',
+      children: [
+        Row(
           children: [
+            Text(widget.report.id, style: const TextStyle(fontWeight: FontWeight.bold, color: purple)),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.report.status == 'Under challenge' ? const Color(0xFFEA580C) : const Color(0xFF6B21A8),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                widget.report.status,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(widget.report.title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 16),
+        HintCard(
+          modeText(
+            'A challenge is anonymous and requests an independent ombudsperson review. If upheld, the member is replaced and loses access.',
+            'A challenge is anonymous and goes to an independent reviewer, not to the member you name. If it is upheld, the member is replaced and loses access to your case.',
+          ),
+        ),
+        Form(
+          key: form,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SoftCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Who concerns you?',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    if (widget.report.committee.isEmpty)
+                      const Text('No committee members assigned to this case yet.')
+                    else
+                      for (final m in widget.report.committee)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(m.role),
+                          leading: Icon(
+                            member == m.name
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            color: purple,
+                          ),
+                          trailing: widget.report.challenges.any((c) => c.member == m.name)
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7ED),
+                                    border: Border.all(color: const Color(0xFFEA580C)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'Challenged',
+                                    style: TextStyle(color: Color(0xFFEA580C), fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                )
+                              : null,
+                          onTap: () => setState(() => member = m.name),
+                        ),
+                  ],
+                ),
+              ),
+              if (alreadyChallenged)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    border: Border.all(color: const Color(0xFFEA580C)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Color(0xFFEA580C)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$member has already been challenged on this case. Independent review is pending.',
+                          style: const TextStyle(color: Color(0xFF9A3412), fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: reason,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Potential conflict category',
+                ),
+                items: [
+                  for (final r in [
+                    'Professional relationship',
+                    'Personal relationship',
+                    'Prior involvement',
+                    'Other',
+                  ])
+                    DropdownMenuItem(value: r, child: Text(r)),
+                ],
+                onChanged: alreadyChallenged ? null : (v) => setState(() => reason = v!),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: explanation,
+                enabled: !alreadyChallenged,
+                minLines: 4,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Explain your concern (minimum 15 characters)',
+                  hintText: 'Detail why this member cannot remain neutral on this case...',
+                ),
+                validator: (v) => (v?.trim().length ?? 0) < 15
+                    ? 'Please give at least 15 characters of context.'
+                    : null,
+              ),
+              const SizedBox(height: 20),
+              ActionButton(
+                alreadyChallenged ? 'Already Challenged' : modeText('Review & Submit Challenge', 'Review & Submit Challenge'),
+                alreadyChallenged ? () {} : _reviewAndSubmit,
+                busy: busy,
+              ),
+            ],
+          ),
+        ),
+        if (widget.report.challenges.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Text(
+            'Submitted Challenges',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 12),
+          for (final challenge in widget.report.challenges)
             SoftCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Who concerns you?',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  for (final m in widget.report.committee)
-                    ListTile(
-                      title: Text(m.name),
-                      subtitle: demoEnabled ? null : Text(m.role),
-                      leading: Icon(
-                        member == m.name
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
-                        color: purple,
+                  Row(
+                    children: [
+                      const Icon(Icons.shield_outlined, color: Color(0xFFEA580C), size: 20),
+                      const SizedBox(width: 8),
+                      Text(challenge.member, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEA580C),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Under challenge',
+                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                      onTap: () => setState(() => member = m.name),
-                    ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Conflict Reason: ${challenge.reason}', style: const TextStyle(fontWeight: FontWeight.w500)),
+                  if (challenge.explanation.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(challenge.explanation, style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
+                  ],
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Independent review outcome: Pending adjudication by Ombudsperson.',
+                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
-            DropdownButtonFormField<String>(
-              initialValue: reason,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Potential conflict',
-              ),
-              items: [
-                for (final r in [
-                  'Professional relationship',
-                  'Personal relationship',
-                  'Prior involvement',
-                  'Other',
-                ])
-                  DropdownMenuItem(value: r, child: Text(r)),
-              ],
-              onChanged: (v) => setState(() => reason = v!),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: explanation,
-              minLines: 4,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                labelText: 'Explain your concern',
-              ),
-              validator: (v) => (v?.trim().length ?? 0) < 15
-                  ? 'Please give at least 15 characters of context.'
-                  : null,
-            ),
-            const SizedBox(height: 20),
-            ActionButton(
-              modeText('Submit demo challenge', 'Submit challenge'),
-              submit,
-              busy: busy,
-            ),
-          ],
-        ),
-      ),
-      for (final challenge in widget.report.challenges)
-        SoftCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(challenge.member),
-              Text(challenge.reason),
-              Text(challenge.status, style: const TextStyle(color: purple)),
-              if (demoEnabled)
-                const Text(
-                  'Independent outcome: pending. No reassignment received.',
-                ),
-            ],
-          ),
-        ),
-    ],
-  );
+        ],
+      ],
+    );
+  }
 }
 
 class InboxScreen extends ConsumerWidget {
@@ -825,14 +1081,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       text.clear();
     } catch (e) {
       if (mounted) {
-        feedback(
-          context,
-          friendlyError(
-            e,
-            fallback:
-                'Message could not be sent. Your draft remains available.',
-          ),
-        );
+        if (e is SyncWarningException) {
+          feedback(context, e.message);
+        } else {
+          feedback(
+            context,
+            friendlyError(
+              e,
+              fallback:
+                  'Message could not be sent. Your draft remains available.',
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => busy = false);

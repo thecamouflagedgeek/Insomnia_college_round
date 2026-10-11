@@ -11,13 +11,27 @@ export function useAccessibleCases() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    ApiService.getReports().then((res) => {
-      const list = res.data || [];
-      setCases(list);
-      setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
-      setLoading(false);
-    });
+    let active = true;
+    const fetchCases = (silent = false) => {
+      if (!silent) setLoading(true);
+      ApiService.getReports().then((res) => {
+        if (!active) return;
+        const list = res.data || [];
+        setCases(list);
+        setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
+        if (!silent) setLoading(false);
+      });
+    };
+
+    fetchCases();
+    const timer = setInterval(() => fetchCases(true), 5000);
+    const handleFocus = () => fetchCases(true);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [currentUser.id]);
 
   return { cases, selectedCaseId, setSelectedCaseId, loading };

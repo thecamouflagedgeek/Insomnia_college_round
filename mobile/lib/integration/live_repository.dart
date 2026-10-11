@@ -134,8 +134,9 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
 
   @override
   Future<List<Report>> reports() async {
+    final tokens = await _vault.tokens();
     final out = <Report>[];
-    for (final entry in (await _vault.tokens()).entries) {
+    for (final entry in tokens.entries) {
       try {
         out.add(await _load(entry.key, entry.value));
       } on ApiFailure catch (e) {
@@ -265,21 +266,30 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       'explanation': explanation,
       'client_nonce': randomNonce(),
     });
-    report.challenges.add(
-      Challenge(
-        member,
-        reason,
-        explanation,
-        status: _challengeLabels['pending_review']!,
-      ),
-    );
-    report.status = 'Under challenge';
+    try {
+      await refresh(report);
+    } catch (_) {
+      report.challenges.add(
+        Challenge(
+          member,
+          reason,
+          explanation,
+          status: _challengeLabels['pending_review']!,
+        ),
+      );
+      report.status = 'Under challenge';
+    }
   }
 
   @override
   Future<void> send(Report report, String text) async {
-    await _api.sendMessage(report.id, await _token(report.id), text);
-    report.messages.add(Note('You', text));
+    final token = await _token(report.id);
+    await _api.sendMessage(report.id, token, text);
+    try {
+      await refresh(report);
+    } catch (_) {
+      report.messages.add(Note('You', text));
+    }
   }
 
   @override

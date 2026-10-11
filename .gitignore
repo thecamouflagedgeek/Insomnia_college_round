@@ -21,3 +21,7 @@ blockchain/broadcast/**/run-[0-9]*.json
 blockchain/broadcast/**/*.lock
 backend/models-cache/
 .freebuff
+.stub_state.json
+.stub_state.json.*
+*.stub_state.json
+*.stub_state.json.*

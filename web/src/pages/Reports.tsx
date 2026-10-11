@@ -25,17 +25,29 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  const loadReports = async () => {
-    setLoading(true);
-    setError(null);
+  const loadReports = async (silent: boolean | unknown = false) => {
+    const isSilent = silent === true;
+    if (!isSilent) {
+      setLoading(true);
+      setError(null);
+    }
     const res = await ApiService.getReports();
     if (res.success && res.data) setComplaints(res.data);
-    else setError(res.error || 'Could not load complaints.');
-    setLoading(false);
+    else if (!isSilent) setError(res.error || 'Could not load complaints.');
+    if (!isSilent) setLoading(false);
   };
 
   useEffect(() => {
     loadReports();
+    const timer = setInterval(() => {
+      loadReports(true);
+    }, 5000);
+    const handleFocus = () => loadReports(true);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [currentUser.id]);
 
   const clearFilters = () => {

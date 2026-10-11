@@ -175,7 +175,15 @@ export class ApiService {
   // --- COMPLAINTS API ---
   public static async getReports(): Promise<ApiResponse<Complaint[]>> {
     const live = await this.live<Complaint[]>('/cases');
-    if (live) return live;
+    if (live && live.success && live.data) {
+      for (const rep of live.data) {
+        const idx = stateComplaints.findIndex(c => c.id === rep.id);
+        if (idx >= 0) stateComplaints[idx] = rep;
+        else stateComplaints.unshift(rep);
+      }
+      return live;
+    }
+    if (live && !live.success) return live;
     // Filter reports based on permissions
     const accessible = stateComplaints.filter(c => {
       if (c.revokedMemberIds.includes(this.user.id)) return false;
@@ -196,7 +204,13 @@ export class ApiService {
 
   public static async getReport(id: string): Promise<ApiResponse<Complaint>> {
     const live = await this.live<Complaint>(`/cases/${encodeURIComponent(id)}`);
-    if (live) return live;
+    if (live && live.success && live.data) {
+      const idx = stateComplaints.findIndex(c => c.id === id);
+      if (idx >= 0) stateComplaints[idx] = live.data;
+      else stateComplaints.unshift(live.data);
+      return live;
+    }
+    if (live && !live.success) return live;
     try {
       this.verifyCaseAccess(id);
       const report = stateComplaints.find(c => c.id === id);
@@ -220,7 +234,15 @@ export class ApiService {
   // --- COMMITTEE CHALLENGES API ---
   public static async getChallenges(poolId?: CommitteePoolId): Promise<ApiResponse<CommitteeChallenge[]>> {
     const live = await this.live<CommitteeChallenge[]>(poolId ? `/challenges?pool_id=${poolId}` : '/challenges');
-    if (live) return live;
+    if (live && live.success && live.data) {
+      for (const ch of live.data) {
+        const idx = stateChallenges.findIndex(c => c.id === ch.id);
+        if (idx >= 0) stateChallenges[idx] = ch;
+        else stateChallenges.unshift(ch);
+      }
+      return live;
+    }
+    if (live && !live.success) return live;
     let poolFiltered = stateChallenges;
     if (poolId) {
       poolFiltered = poolFiltered.filter(ch => ch.poolId === poolId);
@@ -245,7 +267,13 @@ export class ApiService {
 
   public static async getChallenge(id: string): Promise<ApiResponse<CommitteeChallenge>> {
     const live = await this.live<CommitteeChallenge>(`/challenges/${encodeURIComponent(id)}`);
-    if (live) return live;
+    if (live && live.success && live.data) {
+      const idx = stateChallenges.findIndex(c => c.id === id);
+      if (idx >= 0) stateChallenges[idx] = live.data;
+      else stateChallenges.unshift(live.data);
+      return live;
+    }
+    if (live && !live.success) return live;
     const challenge = stateChallenges.find(c => c.id === id);
     if (!challenge) {
       return { success: false, status: 404, error: 'Challenge not found', source: 'stateful_mock', timestamp: new Date().toISOString() };
@@ -275,7 +303,15 @@ export class ApiService {
       `/challenges/${encodeURIComponent(challengeId)}/decide`,
       this.post({ decision, rationale, replacement_member_id: replacementMemberId })
     );
-    if (live) return live;
+    if (live && live.success && live.data) {
+      const data = live.data;
+      const chIdx = stateChallenges.findIndex(c => c.id === challengeId);
+      if (chIdx >= 0) stateChallenges[chIdx] = data.challenge;
+      const compIdx = stateComplaints.findIndex(c => c.id === data.updatedComplaint.id);
+      if (compIdx >= 0) stateComplaints[compIdx] = data.updatedComplaint;
+      return live;
+    }
+    if (live && !live.success) return live;
     const challenge = stateChallenges.find(c => c.id === challengeId);
     if (!challenge) {
       return { success: false, status: 404, error: 'Challenge not found', source: 'stateful_mock', timestamp: new Date().toISOString() };
@@ -398,7 +434,11 @@ export class ApiService {
   // --- WITNESS QUORUM API ---
   public static async getWitnessInvitations(complaintId: string): Promise<ApiResponse<WitnessInvitation[]>> {
     const live = await this.live<WitnessInvitation[]>(`/cases/${encodeURIComponent(complaintId)}/witnesses`);
-    if (live) return live;
+    if (live && live.success && live.data) {
+      stateWitnesses = stateWitnesses.filter(w => w.complaintId !== complaintId).concat(live.data);
+      return live;
+    }
+    if (live && !live.success) return live;
     // Only assigned investigator can see full invitation responses
     const isAssigned = this.user.role === 'assigned_investigator' || this.user.role === 'administrator';
 
@@ -428,7 +468,8 @@ export class ApiService {
 
   public static async getWitnessQuorumSummary(complaintId: string): Promise<ApiResponse<WitnessQuorumSummary>> {
     const live = await this.live<WitnessQuorumSummary>(`/cases/${encodeURIComponent(complaintId)}/witness-summary`);
-    if (live) return live;
+    if (live && live.success && live.data) return live;
+    if (live && !live.success) return live;
     const list = stateWitnesses.filter(w => w.complaintId === complaintId);
     const accepted = list.filter(w => w.status === 'accepted').length;
     const declined = list.filter(w => w.status === 'declined').length;
@@ -457,7 +498,11 @@ export class ApiService {
       `/cases/${encodeURIComponent(complaintId)}/witnesses`,
       this.post({ alias: roleAlias })
     );
-    if (live) return live;
+    if (live && live.success && live.data) {
+      stateWitnesses.push(live.data);
+      return live;
+    }
+    if (live && !live.success) return live;
     if (this.user.role !== 'assigned_investigator' && this.user.role !== 'administrator') {
       return {
         success: false,
@@ -493,7 +538,11 @@ export class ApiService {
     const live = await this.live<Array<{ id: string; sender: string; text: string; timestamp: string; isEncrypted: boolean }>>(
       `/cases/${encodeURIComponent(complaintId)}/messages`
     );
-    if (live) return live;
+    if (live && live.success && live.data) {
+      stateMessages[complaintId] = live.data;
+      return live;
+    }
+    if (live && !live.success) return live;
     try {
       this.verifyCaseAccess(complaintId);
       const msgs = stateMessages[complaintId] || [];
@@ -509,7 +558,14 @@ export class ApiService {
       `/cases/${encodeURIComponent(complaintId)}/messages`,
       this.post({ text })
     );
-    if (live) return live;
+    if (live && live.success && live.data) {
+      if (!stateMessages[complaintId]) {
+        stateMessages[complaintId] = [];
+      }
+      stateMessages[complaintId].push({ ...live.data, isEncrypted: true });
+      return live;
+    }
+    if (live && !live.success) return live;
     try {
       this.verifyCaseAccess(complaintId);
       if (!stateMessages[complaintId]) {
@@ -551,7 +607,8 @@ export class ApiService {
     const live = await this.live<AuditEvent[]>(
       complaintId ? `/audit?case_id=${encodeURIComponent(complaintId)}` : '/audit'
     );
-    if (live) return live;
+    if (live && live.success && live.data) return live;
+    if (live && !live.success) return live;
     let events = stateAuditEvents;
     if (complaintId) {
       events = events.filter(e => e.complaintId === complaintId);
@@ -594,7 +651,8 @@ export class ApiService {
   // --- COMMITTEE POOL API ---
   public static async getCommitteePool(poolId?: CommitteePoolId): Promise<ApiResponse<CommitteeMemberRecord[]>> {
     const live = await this.live<CommitteeMemberRecord[]>(poolId ? `/committee-pool?pool_id=${poolId}` : '/committee-pool');
-    if (live) return live;
+    if (live && live.success && live.data) return live;
+    if (live && !live.success) return live;
     let list = stateCommitteePool;
     if (poolId) {
       list = list.filter(m => m.poolId === poolId);
@@ -610,7 +668,12 @@ export class ApiService {
 
   public static async assignCommittee(complaintId: string, memberIds: string[]): Promise<ApiResponse<Complaint>> {
     const live = await this.live<Complaint>(`/cases/${encodeURIComponent(complaintId)}/committee`, this.post({ member_ids: memberIds }));
-    if (live) return live;
+    if (live && live.success && live.data) {
+      const idx = stateComplaints.findIndex(comp => comp.id === complaintId);
+      if (idx >= 0) stateComplaints[idx] = live.data;
+      return live;
+    }
+    if (live && !live.success) return live;
 
     const c = stateComplaints.find(comp => comp.id === complaintId);
     if (!c) {

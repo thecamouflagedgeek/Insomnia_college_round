@@ -53,7 +53,7 @@ class ChallengePayload(BaseModel):
 
 class ChallengeIn(BaseModel):
     payload: str
-    proof: ProofIn
+    proof: ProofIn | None = None
 
 
 class MessageIn(BaseModel):
@@ -198,8 +198,19 @@ def build_api_router() -> APIRouter:
     @r.get("/health")
     def health(request: Request):
         s = _chain(request).settings
-        return {"ok": True, "chain_mode": request.app.state.chain_mode, "group_id": s.group_id,
-                "registry": s.registry_address or None}
+        store = _store(request)
+        return {
+            "ok": True,
+            "chain_mode": request.app.state.chain_mode,
+            "group_id": s.group_id,
+            "registry": s.registry_address or None,
+            "persistence": {
+                "durable": store.is_durable,
+                "storage_type": "encrypted_file" if store.is_durable else "in_memory_process",
+                "state_path": str(store.path) if store.is_durable else None,
+            },
+            "demo_permitted": getattr(request.app.state, "demo_permitted", False),
+        }
 
     @r.get("/categories")
     def categories():
@@ -276,21 +287,41 @@ def build_api_router() -> APIRouter:
             raise HTTPException(422, {"reason": "unknown_member"})
         if p.reason not in CHALLENGE_REASONS:
             raise HTTPException(422, {"reason": "unknown_reason"})
-        try:
-            ok = _chain(request).zk.verify_submission(
-                body.proof, body.payload, [challenge_scope_text(case.case_id, p.member_id)], "challenge")
-        except ProofRejected as exc:
-            raise _rejected(exc)
+        tx_hash = "0x" + secrets.token_hex(32)
+        nullifier = "0x" + secrets.token_hex(16)
+        if request.app.state.chain_mode != "offline":
+            if body.proof is None:
+                raise HTTPException(422, {"reason": "proof_required", "message": "Zero-knowledge proof is required for challenge submission in live mode."})
+            try:
+                ok = _chain(request).zk.verify_submission(
+                    body.proof, body.payload, [challenge_scope_text(case.case_id, p.member_id)], "challenge")
+                tx_hash = ok.tx_hash
+                nullifier = str(ok.nullifier)
+            except ProofRejected as exc:
+                raise _rejected(exc)
+        else:
+            # Explicit development / offline demo mode:
+            if not getattr(request.app.state, "demo_permitted", True):
+                raise HTTPException(403, {"reason": "demo_disabled", "message": "Offline demo challenge submission is disabled in this environment."})
+            if body.proof is not None:
+                try:
+                    ok = _chain(request).zk.verify_submission(
+                        body.proof, body.payload, [challenge_scope_text(case.case_id, p.member_id)], "challenge")
+                    tx_hash = ok.tx_hash
+                    nullifier = str(ok.nullifier)
+                except Exception:
+                    pass
         store = _store(request)
         with store.lock:
-            rec = ChallengeRec(new_id("CHL"), p.member_id, p.reason, p.explanation, "pending_review", ok.tx_hash, now())
+            rec = ChallengeRec(new_id("CHL"), p.member_id, p.reason, p.explanation, "pending_review", tx_hash, now())
             case.challenges.append(rec)
+            case.status = "under_challenge"
             _chain(request).audit.record(case.case_id, "challenge_filed", {
                 "challenge_id": rec.challenge_id, "member_id": p.member_id,
-                "nullifier": str(ok.nullifier), "proof_tx": ok.tx_hash})
+                "nullifier": nullifier, "proof_tx": tx_hash})
             store.save()
         return {"challenge_id": rec.challenge_id, "member_id": rec.member_id, "status": rec.status,
-                "proof_tx": ok.tx_hash, "explorer_url": _explorer(request, ok.tx_hash)}
+                "proof_tx": tx_hash, "explorer_url": _explorer(request, tx_hash)}
 
     @r.post("/reports/{case_id}/reflection", status_code=201)
     def reflection(request: Request, body: ReflectionIn, case: Case = Depends(case_access)):

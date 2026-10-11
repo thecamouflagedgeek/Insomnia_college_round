@@ -53,6 +53,10 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
     setInvitations(null);
     setSummary(null);
     loadData();
+    const timer = setInterval(() => {
+      loadData();
+    }, 5000);
+    return () => clearInterval(timer);
   }, [complaintId, currentUser.id]);
 
   const handleInvite = async (e: React.FormEvent) => {

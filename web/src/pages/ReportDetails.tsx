@@ -40,9 +40,11 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchCase = async () => {
-    setLoading(true);
-    setAccessError(null);
+  const fetchCase = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setAccessError(null);
+    }
     const res = await ApiService.getReport(complaintId);
     if (res.success && res.data) {
       setComplaint(res.data);
@@ -50,16 +52,28 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
       setChallenge(
         ch.data?.find((c) => c.complaintId === complaintId && c.status === 'pending_independent_review') ?? null
       );
-    } else {
+    } else if (!silent) {
       setComplaint(null);
       setAccessError(res.error || `You are not authorised to view case ${complaintId}.`);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
-    if (complaintId) fetchCase();
-    else setLoading(false);
+    if (complaintId) {
+      fetchCase();
+      const timer = setInterval(() => {
+        fetchCase(true);
+      }, 5000);
+      const handleFocus = () => fetchCase(true);
+      window.addEventListener('focus', handleFocus);
+      return () => {
+        clearInterval(timer);
+        window.removeEventListener('focus', handleFocus);
+      };
+    } else {
+      setLoading(false);
+    }
   }, [complaintId, currentUser.id]);
 
   const back = (

@@ -50,20 +50,33 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
     );
   };
 
-  const loadPoolData = async (poolId: CommitteePoolId) => {
-    setLoading(true);
+  const loadPoolData = async (poolId: CommitteePoolId, silent = false) => {
+    if (!silent) setLoading(true);
     const [membersRes, challengesRes] = await Promise.all([
       ApiService.getCommitteePool(poolId),
       ApiService.getChallenges(poolId)
     ]);
     setMembers(membersRes.data ?? []);
     setChallenges(challengesRes.data ?? []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
     loadAllChallenges();
-  }, [currentUser.id]);
+    const timer = setInterval(() => {
+      loadAllChallenges();
+      if (selectedPoolId) loadPoolData(selectedPoolId, true);
+    }, 5000);
+    const handleFocus = () => {
+      loadAllChallenges();
+      if (selectedPoolId) loadPoolData(selectedPoolId, true);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [currentUser.id, selectedPoolId]);
 
   useEffect(() => {
     if (selectedPoolId) loadPoolData(selectedPoolId);

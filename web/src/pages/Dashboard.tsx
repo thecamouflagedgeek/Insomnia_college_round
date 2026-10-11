@@ -74,20 +74,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setHiddenBelow((cur) => (cur === next ? cur : next));
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
+  const loadData = async (silent: boolean | unknown = false) => {
+    const isSilent = silent === true;
+    if (!isSilent) {
+      setLoading(true);
+      setError(null);
+    }
     const [cRes, chRes, aRes] = await Promise.all([
       ApiService.getReports(),
       ApiService.getChallenges(),
       ApiService.getAuditEvents()
     ]);
-    if (!cRes.success) setError(cRes.error || 'Could not load cases.');
+    if (!cRes.success && !isSilent) setError(cRes.error || 'Could not load cases.');
     const cases = cRes.data ?? [];
     setComplaints(cases);
     setChallenges(chRes.data ?? []);
     setEvents(aRes.success && aRes.data ? aRes.data : []);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
 
     // Witness responses still pending, summed over open cases this role can see.
     const open = cases.filter((c) => isOpen(c.status));
@@ -103,6 +106,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   useEffect(() => {
     setWitness(null);
     loadData();
+    const timer = setInterval(() => {
+      loadData(true);
+    }, 5000);
+    const handleFocus = () => loadData(true);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [currentUser.id]);
 
   useEffect(() => {

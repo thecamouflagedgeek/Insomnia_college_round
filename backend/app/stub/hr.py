@@ -264,6 +264,12 @@ def build_hr_router() -> APIRouter:
         c = _case_for(request, user, case_id)
         if user.role not in ("hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
+        if len(set(body.member_ids)) != len(body.member_ids):
+            raise HTTPException(422, {"reason": "duplicate_committee_members", "message": "All committee members must be distinct individuals."})
+        if any(mid not in STAFF for mid in body.member_ids):
+            raise HTTPException(422, {"reason": "unknown_committee_member", "message": "One or more committee members are not valid staff members."})
+        if any(mid in c.revoked_ids for mid in body.member_ids):
+            raise HTTPException(403, {"reason": "revoked_member_ineligible", "message": "A recused or revoked member cannot be assigned to this committee."})
         store = _store(request)
         with store.lock:
             c.committee = [committee_entry(mid) for mid in body.member_ids if mid in STAFF]
