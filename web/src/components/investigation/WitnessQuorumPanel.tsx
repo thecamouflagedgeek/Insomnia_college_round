@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAutoRefresh, refreshDashboard } from '../../hooks/useAutoRefresh';
 import { CheckCircle2, Clock, Copy, Check, Lock, RefreshCw, Send, UserRound, Users, XCircle } from 'lucide-react';
 import { WitnessInvitation, WitnessQuorumSummary } from '../../types/witness';
@@ -55,6 +55,7 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
       setInviteError(null);
       setInvitations(null);
       setSummary(null);
+      setNewAlias('');
     }
     return loadData(isCurrent);
   }, [complaintId, currentUser.id]);
@@ -97,15 +98,16 @@ export function WitnessQuorumPanel({ complaintId }: WitnessQuorumPanelProps) {
 
   return (
     <div className="space-y-5">
+      <p className="text-xs text-muted">Give each witness their private code to enter in the employee app. Responses update automatically. Push notifications and statement collection are not connected; participation is not proof of misconduct.</p>
       <Section
         icon={<Users />}
         title="Witness quorum"
-        description="Voluntary, anonymous corroboration. Not responding is never treated as evidence either way."
+        description="Voluntary witness participation. Not responding is never treated as evidence either way."
         action={
           summary?.quorumMet ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-semibold text-[#137333] border border-[#ceead6]">
-              <CheckCircle2 className="h-3.5 w-3.5 text-[#137333]" />
-              Quorum reached
+            <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Participation quorum reached
             </span>
           ) : !isAssignedInvestigator ? (
             <span className="chip bg-sunken text-muted" title="Participation details are visible to the assigned investigator only">

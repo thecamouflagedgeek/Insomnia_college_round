@@ -24,7 +24,7 @@ import { AuditStatusChip } from '../components/audit/AuditStatusChip';
 import { NavPage } from '../components/layout/nav';
 import { useAuth } from '../hooks/useAuth';
 import { ROLE_LABEL } from '../lib/people';
-import { SEVERITY_ORDER, STATUS_LABEL, isOpen, relativeTime } from '../lib/format';
+import { SEVERITY_ORDER, isOpen, relativeTime } from '../lib/format';
 import { CaseProgressCalendarModal } from '../components/case/CaseProgressCalendarModal';
 
 interface DashboardProps {
@@ -76,15 +76,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const isSilent = silent === true;
     if (!isSilent) {
       setLoading(true);
-      setError(null);
+      setComplaints([]);
+      setWitness(null);
     }
+    setError(null);
     const [cRes, chRes, aRes] = await Promise.all([
       ApiService.getReports(),
       ApiService.getChallenges(),
       ApiService.getAuditEvents()
     ]);
     if (!isCurrent()) return;
-    if (!cRes.success && !isSilent) setError(cRes.error || 'Could not load cases.');
+    if (!cRes.success) setError(cRes.error || 'Could not load cases.');
     const cases = cRes.data ?? [];
     setComplaints(cases);
     setChallenges(chRes.data ?? []);
@@ -181,7 +183,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           role="alert"
           title="Cases could not be loaded"
           action={
-            <button className="btn btn-secondary btn-sm" onClick={loadData}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void loadData()}>
               <RefreshCw />
               Retry
             </button>

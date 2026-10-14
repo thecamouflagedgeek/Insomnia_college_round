@@ -7,6 +7,7 @@ import 'core/device_lock.dart';
 import 'data/repository.dart';
 import 'screens/employee_screens.dart';
 import 'screens/create_report.dart';
+import 'screens/evidence_screen.dart';
 import 'features/story/story_screens.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -47,7 +48,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             ? WitnessScreen(s.extra! as Invitation)
             : const InboxScreen(),
       ),
-      for (final section in ['', '/challenge', '/chat', '/audit'])
+      for (final section in ['', '/challenge', '/chat', '/audit', '/evidence'])
         GoRoute(
           path: '/case/:id$section',
           builder: (c, s) {
@@ -57,6 +58,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               '/challenge' => ChallengeScreen(report),
               '/chat' => ChatScreen(report),
               '/audit' => AuditScreen(report),
+              '/evidence' => EvidenceScreen(report),
               _ => DetailsScreen(report),
             };
           },

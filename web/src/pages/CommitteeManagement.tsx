@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, Scale, UserX, Users } from 'lucide-react';
 import { CommitteePoolId, COMMITTEE_POOLS, CommitteeMemberRecord, CommitteeChallenge } from '../types/committee';
@@ -45,7 +45,7 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
   const loadAllChallenges = async (isCurrent = () => true) => {
     const res = await ApiService.getChallenges();
     if (!isCurrent()) return;
-    const list = res.data ?? [];
+    const list = res.success ? res.data ?? [] : [];
     setAllChallenges(list);
     setSelectedPoolId(
       (cur) => cur ?? list.find((c) => c.status === 'pending_independent_review')?.poolId ?? 'whistleblowing_ethics'
@@ -53,18 +53,18 @@ export function CommitteeManagement({ initialPoolId, onOpenCase }: CommitteeMana
   };
 
   const loadPoolData = async (poolId: CommitteePoolId, silent = false, isCurrent = () => true) => {
-    if (!silent) setLoading(true);
+    if (!silent) { setLoading(true); setMembers([]); setChallenges([]); }
     const [membersRes, challengesRes] = await Promise.all([
       ApiService.getCommitteePool(poolId),
       ApiService.getChallenges(poolId)
     ]);
     if (!isCurrent()) return;
-    setMembers(membersRes.data ?? []);
-    setChallenges(challengesRes.data ?? []);
-    if (!silent) setLoading(false);
+    setMembers(membersRes.success ? membersRes.data ?? [] : []);
+    setChallenges(challengesRes.success ? challengesRes.data ?? [] : []);
+    setLoading(false);
   };
 
-  useAutoRefresh((isCurrent) => loadAllChallenges(isCurrent), [currentUser.id]);
+  useAutoRefresh(isCurrent => loadAllChallenges(isCurrent), [currentUser.id]);
   useAutoRefresh((isCurrent, initial) => {
     if (selectedPoolId) return loadPoolData(selectedPoolId, !initial, isCurrent);
   }, [selectedPoolId ?? '', currentUser.id]);

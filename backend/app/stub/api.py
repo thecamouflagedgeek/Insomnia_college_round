@@ -6,7 +6,7 @@ import secrets
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from app.chain.hashing import content_sha256
@@ -15,7 +15,7 @@ from app.chain.semaphore import ProofIn
 from app.chain.signals import challenge_scope_text
 from app.chain.zk_service import ProofRejected
 from app.core.supabase_repo import EVIDENCE_MAX_PLAINTEXT, STORAGE_MIME_TYPES, PersistenceError
-from app.stub import intelligence, persist
+from app.stub import evidence_check, intelligence, persist
 from app.stub.store import COMMITTEE, DEFAULT_REPLACEMENT, STAFF, Case, ChallengeRec, Evidence, Invitation, \
     Message, StubStore, committee_entry, new_id, now, token_hash
 
@@ -312,16 +312,26 @@ def build_api_router() -> APIRouter:
         content = await file.read(MAX_EVIDENCE_BYTES + 1)
         if len(content) > MAX_EVIDENCE_BYTES:
             raise HTTPException(413, {"reason": "file_too_large"})
-        sha = hashlib.sha256(content).hexdigest()
-        ev = Evidence(new_id("EVD"), (file.filename or "file")[:200], file.content_type or "application/octet-stream",
-                      len(content), sha, base64.b64encode(content).decode())
         store = _store(request)
+        digest = lambda b: hashlib.sha256(b).hexdigest()
+        with store.lock:
+            others = [e for c in store.cases.values() if c.case_id != case.case_id for e in c.evidence]
+            elsewhere = {h for e in others for h in (e.sha256, e.original_sha256) if h}
+            incident = case.payload.get("incident_date")
+            check = evidence_check.analyse(content, file.content_type or "", date.fromisoformat(incident)
+                                           if incident else None, elsewhere, digest, (file.filename or "file")[:200],
+                                           {e.phash for e in others if e.phash})
+        # The cleaned copy (identifying metadata removed) is what is stored, sealed and later shown to staff.
+        cleaned = check.content
+        sha = digest(cleaned)
+        ev = Evidence(new_id("EVD"), check.name, check.mime, len(cleaned), sha,
+                      base64.b64encode(cleaned).decode(), check.flags, digest(content), check.phash)
         if store.supabase:
             # The private bucket accepts these types up to 10 MB (stored encrypted); refuse early and say why.
             if ev.mime not in STORAGE_MIME_TYPES:
                 raise HTTPException(415, {"reason": "unsupported_type",
                                           "message": "Evidence must be a JPEG or PNG image, a PDF, or plain text."})
-            if len(content) > EVIDENCE_MAX_PLAINTEXT:
+            if ev.size > EVIDENCE_MAX_PLAINTEXT:
                 raise HTTPException(413, {"reason": "file_too_large"})
         with store.lock, persist.write(request, case) as w:
             case.evidence.append(ev)
@@ -329,9 +339,19 @@ def build_api_router() -> APIRouter:
                 "evidence_id": ev.evidence_id, "content_sha256": sha, "size": ev.size, "mime": ev.mime})
             if store.supabase:
                 w.add(lambda: store.supabase.save_evidence(case.case_id, ev.evidence_id, ev.mime, ev.size, sha,
-                                                           content))
+                                                           cleaned))
             store.save()
         return {"evidence_id": ev.evidence_id, "name": ev.name, "mime": ev.mime, "size": ev.size, "sha256": sha}
+
+    @r.get("/reports/{case_id}/evidence/{evidence_id}")
+    def evidence_file(request: Request, evidence_id: str, case: Case = Depends(case_access)):
+        """The reporter's own file, as stored (the cleaned copy staff see). Only this case's token opens it."""
+        ev = next((e for e in case.evidence if e.evidence_id == evidence_id), None)
+        if ev is None:
+            raise HTTPException(404, {"reason": "evidence_not_found"})
+        return Response(_store(request).evidence_content(case.case_id, ev), media_type=ev.mime,
+                        headers={"X-Content-SHA256": ev.sha256, "Cache-Control": "no-store",
+                                 "Content-Disposition": "inline"})
 
     @r.post("/reports/{case_id}/challenge", status_code=201)
     def challenge(request: Request, body: ChallengeIn, case: Case = Depends(case_access)):

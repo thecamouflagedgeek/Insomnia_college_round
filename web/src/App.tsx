@@ -46,20 +46,14 @@ function AppContent() {
   useAutoRefresh(async (isCurrent) => {
     const res = await ApiService.getReports();
     if (!isCurrent()) return;
-    const first = res.data?.[0]?.id;
-    if (first) setSelectedCaseId((cur) => cur || first);
+    const list = res.success ? res.data ?? [] : [];
+    setSelectedCaseId(cur => list.some(report => report.id === cur) ? cur : list[0]?.id ?? '');
   }, [currentUser.id]);
-
-  const [pendingChallengesCount, setPendingChallengesCount] = useState<number>(0);
-
-  // Monitor challenges to update badge dynamically
+  const [pendingChallengesCount, setPendingChallengesCount] = useState(0);
+  // Pending-challenge badge: refreshed on a timer and whenever the page changes.
   useAutoRefresh(async (isCurrent) => {
     const res = await ApiService.getChallenges();
-    if (!isCurrent()) return;
-    if (res.data) {
-      const pending = res.data.filter((c) => c.status === 'pending_independent_review').length;
-      setPendingChallengesCount(pending);
-    }
+    if (isCurrent()) setPendingChallengesCount(res.success ? (res.data ?? []).filter(c => c.status === 'pending_independent_review').length : 0);
   }, [currentUser.id, currentPage]);
 
   const handleNavigate = (page: NavPage, caseId?: string) => {

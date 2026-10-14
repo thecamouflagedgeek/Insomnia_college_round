@@ -89,6 +89,11 @@ class Evidence:
     size: int
     sha256: str
     content_b64: str
+    # Integrity cues for reviewers (app.stub.evidence_check) and the upload's own hash, used only to spot the same
+    # file filed on another case. Neither reveals capture time, place or device.
+    flags: list[dict] = field(default_factory=list)
+    original_sha256: str = ""
+    phash: str = ""  # image difference hash, for near-duplicates across cases
 
 
 @dataclass
@@ -293,6 +298,13 @@ class StubStore:
             "WIT-04": Invitation("WIT-04", "INC-892", token_hash("wit_code_4"), "Voluntary workplace investigation interview invitation.", response=None, alias="Witness D (Staff SRE)", invited_at="2026-10-09T09:15:00Z"),
         }
 
+    def attach(self, name: str, dump, load) -> None:
+        """Persist dump() under `name`; a value already in the state file is handed to load() right away."""
+        self._extensions[name] = (dump, load)
+        if name in self._pending_ext:
+            load(json.loads(self._crypto.decrypt_field(EncryptedField(self._pending_ext.pop(name), f"ext:{name}:state"),
+                                                       "ext", name, "state")))
+
     def save(self) -> None:
         """Mirror to the encrypted state file. Supabase writes are explicit, per operation (app.stub.persist)."""
         with self._lock:
@@ -403,6 +415,10 @@ class StubStore:
 
     def _open(self, c: dict) -> dict:
         return self._transform(c, self._dec)
+
+    @property
+    def persistent(self) -> bool:
+        return self._path is not None
 
     @property
     def lock(self) -> threading.RLock:

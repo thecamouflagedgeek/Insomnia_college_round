@@ -142,8 +142,11 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
     return PageShell(
       title: 'Belong.\nWithout being exposed.',
       children: [
-        const HintCard(
-          'Your phone creates a private key that never leaves it. Only a one-way commitment joins the employee group on Polygon, so reports prove you are an employee without revealing which one.',
+        HintCard(
+          chainText(
+            'Your phone creates a private key that never leaves it. Only a one-way commitment joins the employee group on Polygon, so reports prove you are an employee without revealing which one.',
+            'Your phone creates a private key that never leaves it. Only a one-way commitment joins the employee group. This test backend keeps the group offline and does not check proofs cryptographically.',
+          ),
         ),
         if (enrolled == true) ...[
           const SoftCard(
@@ -169,8 +172,11 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
           ),
           const SizedBox(height: 16),
           ActionButton('Verify membership', verify, busy: busy),
-          const Text(
-            'HR knows a code was used, not which reports you file. Verification is recorded on Polygon and can take a few seconds.',
+          Text(
+            chainText(
+              'HR knows a code was used, not which reports you file. Verification is recorded on Polygon and can take a few seconds.',
+              'HR knows a code was used, not which reports you file. On this test backend nothing is recorded on Polygon.',
+            ),
           ),
         ],
       ],
@@ -551,6 +557,11 @@ class DetailsScreen extends StatelessWidget {
         'View Silent Audit',
         () => context.push('/case/${report.id}/audit', extra: report),
       ),
+      if (!demoEnabled && report.evidence.isNotEmpty)
+        ActionButton(
+          'Your evidence (${report.evidence.length})',
+          () => context.push('/case/${report.id}/evidence', extra: report),
+        ),
     ],
   );
 }
@@ -733,8 +744,11 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
         feedback(
           context,
           modeText(
-            'Challenge recorded and synchronized with backend.',
-            'Challenge recorded on Polygon. An independent reviewer will decide.',
+            'Demo challenge recorded. Independent review remains pending.',
+            chainText(
+              'Challenge recorded on Polygon. An independent reviewer will decide.',
+              'Challenge recorded in the audit log. An independent reviewer will decide.',
+            ),
           ),
         );
         explanation.clear();
@@ -1254,7 +1268,10 @@ class AuditScreen extends ConsumerWidget {
       HintCard(
         modeText(
           'Demo timeline. Integrity does not establish truth. Anchoring can make changes detectable; it cannot prevent all suppression.',
-          'Every step is sealed and anchored on Polygon, so any later edit is detectable. Integrity does not establish truth.',
+          chainText(
+            'Every step is sealed and anchored on Polygon, so any later edit is detectable. Integrity does not establish truth.',
+            'Every step is sealed and hash-chained; this test backend anchors to an offline chain, not Polygon. Integrity does not establish truth.',
+          ),
         ),
       ),
       ActionButton(

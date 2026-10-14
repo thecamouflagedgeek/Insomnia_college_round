@@ -75,11 +75,11 @@ export async function checkBackendHealth(baseUrl: string): Promise<boolean> {
 export class ApiService {
   private static user: User = DEMO_USERS[0]; // Default Sarah Jenkins
   private static apiBaseUrl: string = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  // Live by default: the integration stub (backend/app/stub, /hr/* routes) enforces access control server-side.
-  // VITE_FORCE_MOCK=true keeps the in-browser demo; if the backend is unreachable and VITE_USE_MOCK_FALLBACK is
-  // not 'false', calls fall back to the mock so the dashboard still renders.
+  // Live data only: the integration API (backend/app/stub, /hr/* routes) enforces access control server-side, and an
+  // unreachable backend surfaces as an error, never as substitute data. VITE_FORCE_MOCK=true runs the in-browser
+  // demo instead; VITE_USE_MOCK_FALLBACK=true (opt-in) falls back to it when the backend is unreachable.
   private static forceMock: boolean = import.meta.env.VITE_FORCE_MOCK === 'true';
-  private static mockFallback: boolean = import.meta.env.VITE_USE_MOCK_FALLBACK !== 'false';
+  private static mockFallback: boolean = import.meta.env.VITE_USE_MOCK_FALLBACK === 'true';
   private static stubAdminKey: string = import.meta.env.VITE_STUB_ADMIN_KEY || 'adm';
 
   public static setUser(user: User) {
@@ -111,9 +111,12 @@ export class ApiService {
   private static async live<T>(path: string, init: RequestInit = {}): Promise<ApiResponse<T> | null> {
     if (this.forceMock) return null;
     const timestamp = () => new Date().toISOString();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch(`${this.apiBaseUrl}/hr${path}`, {
         ...init,
+        signal: init.signal ?? controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'X-Stub-Admin': this.stubAdminKey,
@@ -132,7 +135,10 @@ export class ApiService {
     } catch {
       // For mutations (POST, PUT, PATCH, DELETE), never silently fall back to mock when live request fails
       if (this.mockFallback && (!init.method || init.method === 'GET')) return null;
-      return { success: false, status: 0, error: 'Backend unreachable: mutation was not persisted', source: 'real_backend', timestamp: timestamp() };
+      const write = !!init.method && init.method !== 'GET';
+      return { success: false, status: 0, error: write ? 'Backend unreachable: nothing was saved' : 'Backend unreachable', source: 'real_backend', timestamp: timestamp() };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -702,11 +708,12 @@ export class ApiService {
       timestamp: now,
       actorRef: `${this.user.name} (${this.user.title})`,
       details: `Independent 3-member committee assigned to case ${complaintId}: ${memberIds.map(id => stateCommitteePool.find(m => m.id === id)?.name || id).join(', ')}.`,
-      sha256Proof: '8f2a93b41d2110c92bf5a19001124ae8092cc771124ae8092cc7719001124ae8',
-      merkleRoot: '0x9948201bc019248102948bc0192481029481092a18230bc71a80491823019bc0',
-      blockNumber: 62891420,
-      txHash: '0x1121bca01994afc09121a884efb204918230bc71a80418230bc71a8049182301',
-      verificationStatus: 'verified_commitment'
+      // Demo mode has no chain: no hashes, block or transaction are invented for this entry.
+      sha256Proof: '',
+      merkleRoot: '',
+      blockNumber: 0,
+      txHash: '',
+      verificationStatus: 'unavailable_verification_service'
     });
 
     return {
@@ -751,7 +758,7 @@ export class ApiService {
           {
             caseIds: ['INC-650', 'INC-741'],
             score: 0.74,
-            method: 'semantic_embedding'
+            method: 'token_jaccard_degraded'
           }
         ],
         limitation: 'Patterns are review cues, not findings. Reports remain separate cases.'
@@ -781,6 +788,36 @@ export class ApiService {
 
   public static async getInsights(): Promise<ApiResponse<ReflectReformInsights>> {
     return (await this.live<ReflectReformInsights>('/insights')) ?? this.unavailable();
+  }
+
+  /** Opens a stored (metadata-cleaned) evidence file for staff; the backend audits every opening. The caller revokes
+   *  the returned object URL when the preview closes. */
+  public static async openEvidenceFile(
+    complaintId: string,
+    evidenceId: string
+  ): Promise<ApiResponse<{ url: string; mime: string; sha256: string }>> {
+    if (this.forceMock) return this.unavailable();
+    try {
+      const res = await fetch(
+        `${this.apiBaseUrl}/hr/cases/${encodeURIComponent(complaintId)}/evidence/${encodeURIComponent(evidenceId)}/file`,
+        { headers: { 'X-Stub-Admin': this.stubAdminKey, 'X-Staff-Id': this.user.id } }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const error = body?.detail?.message || body?.detail?.reason || `HTTP ${res.status}`;
+        return { success: false, status: res.status, error, source: 'real_backend', timestamp: new Date().toISOString() };
+      }
+      const blob = await res.blob();
+      return {
+        success: true,
+        status: 200,
+        data: { url: URL.createObjectURL(blob), mime: blob.type, sha256: res.headers.get('X-Content-SHA256') || '' },
+        source: 'real_backend',
+        timestamp: new Date().toISOString()
+      };
+    } catch {
+      return { success: false, status: 0, error: 'Backend unreachable', source: 'real_backend', timestamp: new Date().toISOString() };
+    }
   }
 
   /** Legal Evidence Package: downloads the PDF (the backend records the export in the Silent Audit). */

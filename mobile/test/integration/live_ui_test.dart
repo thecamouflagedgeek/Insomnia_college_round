@@ -32,6 +32,18 @@ class FakeApi extends IncognitoApi {
     return {'index': members.length - 1, 'root': '1', 'tx_hash': '0x1'};
   }
 
+  final evidenceRequests = <String>[];
+
+  @override
+  Future<List<int>> evidenceFile(
+    String caseId,
+    String token,
+    String evidenceId,
+  ) async {
+    evidenceRequests.add('$caseId/$evidenceId/$token');
+    return 'Meeting notes: shouting at 10:02.'.codeUnits;
+  }
+
   @override
   Future<Json> group() async => {
     'group_id': 23,
@@ -169,4 +181,39 @@ void main() {
     expect(find.text('Committee member A'), findsNothing);
     expect(find.text('Submit challenge'), findsOneWidget);
   }, skip: skip != false);
+
+  testWidgets(
+    'reporter sees their own stored evidence, fetched with the case token',
+    (tester) async {
+      final report = Report(
+        id: 'INC-TEST',
+        category: 'Bullying',
+        title: 't',
+        description: 'd',
+        date: DateTime(2026, 10, 9),
+        evidence: const [
+          EvidenceRef(
+            'EVD-1',
+            'notes.txt',
+            'text/plain',
+            33,
+            'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12',
+          ),
+        ],
+      );
+      final (container, api) = await pumpApp(tester, '/verify');
+      await CaseVault(container.read(secretStoreProvider))
+          .add('INC-TEST', 'case-token');
+      container.read(sessionProvider.notifier).enter();
+      container
+          .read(routerProvider)
+          .go('/case/INC-TEST/evidence', extra: report);
+      await tester.pumpAndSettle();
+      expect(find.text('Your evidence.'), findsOneWidget);
+      expect(find.text('notes.txt'), findsOneWidget);
+      expect(find.text('Meeting notes: shouting at 10:02.'), findsOneWidget);
+      expect(api.evidenceRequests, ['INC-TEST/EVD-1/case-token']);
+    },
+    skip: skip != false,
+  );
 }

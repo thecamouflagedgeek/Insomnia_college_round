@@ -355,6 +355,22 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/EvidenceView'}
         '413': {description: 'too_many_files | file_too_large'}
+  /reports/{case_id}/evidence/{evidence_id}:
+    parameters:
+      - {name: case_id, in: path, required: true, schema: {type: string}}
+      - {name: evidence_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: >-
+        The reporter's own evidence file, as stored: photos have identifying metadata (location, device, author,
+        timestamps) removed on upload, so this is exactly the copy staff see. X-Content-SHA256 is the sealed hash.
+      security: [{caseToken: []}]
+      responses:
+        '200':
+          description: File bytes with their stored media type
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {description: 'case_not_found | evidence_not_found'}
   /reports/{case_id}/challenge:
     parameters: [{name: case_id, in: path, required: true, schema: {type: string}}]
     post:

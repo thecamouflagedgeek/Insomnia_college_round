@@ -9,6 +9,7 @@ access rules the dashboard used to check in the browser:
   invites witnesses; witness responses are masked for everyone else.
 
 Stand-in auth: X-Stub-Admin (the stub's shared key) + X-Staff-Id (who is acting). M2's real auth replaces both."""
+import base64
 import hashlib
 import secrets
 from typing import Literal
@@ -136,7 +137,8 @@ def complaint_dto(request: Request, case: Case, verification=None) -> dict:
         "sha256Hash": e.sha256, "zkpCommitment": case.nullifier, "uploadTimestamp": case.created_at,
         "verificationStatus": {"verified": "verified", "pending_anchor": "pending"}.get(
             ev_status.get(e.evidence_id, "verified"), "tampered"),
-        "storagePath": f"stub://{case.case_id}/{e.evidence_id}"} for e in case.evidence]
+        "storagePath": f"stub://{case.case_id}/{e.evidence_id}",
+        "integrityFlags": list(e.flags)} for e in case.evidence]
     status = _status(request, case)
     pending = next((c for c in case.challenges if c.status == "pending_review"), None)
     return {
@@ -163,11 +165,13 @@ def challenge_dto(case: Case, ch: ChallengeRec) -> dict:
         "decisionRationale": ch.rationale, "decidedAt": ch.decided_at, "blockchainVerificationTx": ch.proof_tx}
 
 
-def _audit_details(event_type: str, data: dict) -> tuple[str, str]:
+def _audit_details(event_type: str, data: dict, offline: bool = False) -> tuple[str, str]:
     name = lambda i: STAFF.get(i, {}).get("name", i)  # noqa: E731
     return {
-        "complaint_submitted": ("Employee (ZK proof verified)", "Anonymous report sealed; Semaphore proof validated "
-                                "on-chain."),
+        "complaint_submitted": (("Employee (offline test chain: proof not checked)", "Anonymous report sealed. Offline "
+                                 "test chain: the Semaphore proof was not checked cryptographically.") if offline else
+                                ("Employee (ZK proof verified)", "Anonymous report sealed; Semaphore proof validated "
+                                 "on-chain.")),
         "case_classified": ("Classification engine", f"Classified as {data.get('category')}."),
         "committee_assigned": ("Case assignment", "Committee assigned: "
                                + ", ".join(name(i) for i in data.get("member_ids", [])) + "."),
@@ -187,6 +191,7 @@ def _audit_details(event_type: str, data: dict) -> tuple[str, str]:
         "resolution_recorded": ("Investigation team", "Resolution and reform actions recorded."),
         "reflection_recorded": ("Employee (anonymous)", "Reflect & Reform feedback received."),
         "export_generated": ("Legal export", f"Evidence package {data.get('export_id')} generated."),
+        "evidence_viewed": (name(data.get("staff_id")), f"Opened evidence file {data.get('evidence_id')}."),
         "witness_response_recorded": ("Witness (anonymous)", f"Responses: {data.get('accepted_count')} accepted, "
                                       f"{data.get('declined_count')} declined."),
     }.get(event_type, ("System", event_type.replace("_", " ")))
@@ -199,7 +204,8 @@ def audit_dtos(request: Request, case: Case) -> list[dict]:
     out = []
     for e in chain.verifier.verify(case.case_id).events:
         r = receipts.get(e.seq)
-        actor, details = _audit_details(e.event_type, stored[e.seq].payload.get("data", {}))
+        actor, details = _audit_details(e.event_type, stored[e.seq].payload.get("data", {}),
+                                        request.app.state.chain_mode == "offline")
         out.append({
             "id": f"{case.case_id}-{e.seq}", "complaintId": case.case_id,
             "eventType": _AUDIT_TYPE.get(e.event_type, e.event_type), "timestamp": e.at, "actorRef": actor,
@@ -261,28 +267,42 @@ def build_hr_router() -> APIRouter:
 
     @r.post("/cases/{case_id}/committee")
     def assign_committee(request: Request, case_id: str, body: CommitteeAssignIn, user: Staff = Depends(staff)):
+        """Seat a case committee. A seat must never route around the challenge process: members removed by an upheld
+        challenge, or facing a pending one, cannot be seated, and the committee is frozen while a challenge is open."""
         if user.role not in ("hr_reviewer", "administrator"):
             raise _forbidden("403: Forbidden - Only HR Reviewers or Administrators can assign committee members.")
         c = _case_for(request, user, case_id)
+        ids = body.member_ids
+        if len(set(ids)) != len(ids):
+            raise HTTPException(422, {"reason": "duplicate_member", "message": "Each committee seat needs a different member."})
+        unknown = [i for i in ids if STAFF.get(i, {}).get("role") != "committee_member"]
+        if unknown:
+            raise HTTPException(422, {"reason": "not_committee_member",
+                                      "message": f"Not in the committee pool: {', '.join(unknown)}."})
         if c.status in ("resolved", "closed"):
-            raise HTTPException(409, {"reason": "case_closed", "message": f"Case {case_id} is closed; its committee can no longer change."})
+            raise HTTPException(409, {"reason": "case_closed",
+                                      "message": f"Case {case_id} is closed; its committee can no longer change."})
         pending = [ch for ch in c.challenges if ch.status == "pending_review"]
         if pending:
-            raise HTTPException(409, {"reason": "challenge_pending", "message": "A committee challenge is pending review. The committee cannot change until it is decided."})
-        if len(set(body.member_ids)) != len(body.member_ids):
-            raise HTTPException(422, {"reason": "duplicate_committee_members", "message": "All committee members must be distinct individuals."})
-        if any(STAFF.get(mid, {}).get("role") != "committee_member" for mid in body.member_ids):
-            raise HTTPException(422, {"reason": "unknown_committee_member", "message": "One or more committee members are not valid staff members."})
-        if any(mid in c.revoked_ids for mid in body.member_ids):
-            raise HTTPException(403, {"reason": "revoked_member_ineligible", "message": "A recused or revoked member cannot be assigned to this committee."})
+            raise HTTPException(409, {"reason": "challenge_pending",
+                                      "message": f"A challenge to {STAFF[pending[0].member_id]['name']} awaits independent "
+                                                 "review. The committee cannot change until it is decided."})
+        removed = [i for i in ids if i in c.revoked_ids]
+        if removed:
+            names = ", ".join(STAFF[i]["name"] for i in removed)
+            raise HTTPException(409, {"reason": "member_removed_by_challenge",
+                                      "message": f"{names} was removed from this case by an upheld challenge "
+                                                 "and cannot be seated again."})
         store = _store(request)
         with store.lock, persist.write(request, c):
-            c.committee = [committee_entry(mid) for mid in body.member_ids]
+            c.committee = [committee_entry(mid) for mid in ids]
+            _chain(request).audit.record(c.case_id, "committee_assigned", {"committee_id": f"COM-{c.case_id}",
+                                                                           "member_ids": list(ids)})
             if c.status == "submitted":
+                _chain(request).audit.record(c.case_id, "status_changed", {"from": "submitted", "to": "committee_assigned"})
                 c.status = "committee_assigned"
-            _chain(request).audit.record(c.case_id, "committee_assigned", {"member_ids": body.member_ids})
             store.save()
-        return complaint_dto(request, c)
+        return complaint_dto(request, c, _chain(request).verifier.verify(case_id))
 
     @r.get("/cases/{case_id}/messages")
     def messages(request: Request, case_id: str, user: Staff = Depends(staff)):
@@ -404,6 +424,21 @@ def build_hr_router() -> APIRouter:
             if can_access(user, c):
                 out.extend(audit_dtos(request, c))
         return sorted(out, key=lambda d: d["timestamp"], reverse=True)
+
+    @r.get("/cases/{case_id}/evidence/{evidence_id}/file")
+    def evidence_file(request: Request, case_id: str, evidence_id: str, user: Staff = Depends(staff)):
+        """The stored (cleaned) evidence file. Same access rules as the case; every opening is audited."""
+        c = _case_for(request, user, case_id)
+        ev = next((e for e in c.evidence if e.evidence_id == evidence_id), None)
+        if ev is None:
+            raise HTTPException(404, {"reason": "evidence_not_found"})
+        store = _store(request)
+        with store.lock:
+            _chain(request).audit.record(c.case_id, "evidence_viewed", {"evidence_id": evidence_id, "staff_id": user.id})
+            store.save()
+        return Response(store.evidence_content(c.case_id, ev), media_type=ev.mime,
+                        headers={"X-Content-SHA256": ev.sha256, "Cache-Control": "no-store",
+                                 "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
 
     @r.get("/cases/{case_id}/evidence/{evidence_id}/verify")
     def verify_evidence(request: Request, case_id: str, evidence_id: str, user: Staff = Depends(staff)):

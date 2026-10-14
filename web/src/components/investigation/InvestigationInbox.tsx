@@ -24,13 +24,22 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   const [isDemo, setIsDemo] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
+  const accessDenied = useRef(false);
+  const activeChannel = useRef('');
+  const channel = `${complaintId}:${currentUser.id}`;
+  useEffect(() => {
+    activeChannel.current = channel;
+    return () => { activeChannel.current = ''; };
+  }, [channel]);
   const loadMessages = async (isCurrent = () => true) => {
-    setAccessError(null);
+    if (accessDenied.current) return;
     const res = await ApiService.getMessages(complaintId);
     if (!isCurrent()) return;
+    setAccessError(null);
     setIsDemo(res.source === 'stateful_mock');
     if (res.success && res.data) setMessages(res.data);
     else {
+      accessDenied.current = res.status === 401 || res.status === 403;
       setMessages([]);
       setAccessError(res.error || 'You do not have access to messages for this case.');
     }
@@ -38,24 +47,28 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
 
   useAutoRefresh((isCurrent, initial) => {
     if (initial) {
-      setMessages(null);
-      setSendError(null);
+      accessDenied.current = false; setMessages(null); setInputText(''); setSendError(null); setSending(false);
     }
     return loadMessages(isCurrent);
   }, [complaintId, currentUser.id]);
 
   useEffect(() => {
     const el = streamRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
   }, [messages]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = inputText.trim();
     if (!text) return;
+    if (sending) return;
+    const sentChannel = channel;
     setSending(true);
     setSendError(null);
     const res = await ApiService.sendMessage(complaintId, text);
+    if (activeChannel.current !== sentChannel) return;
     setSending(false);
     if (res.success) {
       setInputText('');
@@ -69,7 +82,8 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
   if (accessError) {
     return (
       <div className="card card-pad">
-        <EmptyState icon={<Lock />} title="This channel isn't open to you" description={accessError} />
+        <EmptyState icon={<Lock />} title="Conversation access restricted" description={accessError} />
+        <button className="btn btn-secondary btn-sm mt-3" onClick={() => { accessDenied.current = false; refreshDashboard(); }}>Retry access</button>
       </div>
     );
   }
@@ -81,9 +95,9 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
           <h2 className="text-base font-semibold text-ink">
             Anonymous reporter · <span className="case-id text-brand-700">{complaintId}</span>
           </h2>
-          <p className="text-xs text-muted">The reporter replies from the INCOGNITO app. Their identity is never shown here.</p>
+          <p className="text-xs text-muted">The reporter replies from the INCOGNITO app. Their identity is never shown here. Updates automatically.</p>
         </div>
-        <button className="icon-btn h-9 w-9 shrink-0" onClick={() => loadMessages()} aria-label="Refresh messages" title="Refresh">
+        <button className="icon-btn h-9 w-9 shrink-0" onClick={() => refreshDashboard()} aria-label="Refresh messages" title="Updates automatically; refresh now">
           <RefreshCw className="h-4 w-4" />
         </button>
       </header>
@@ -95,11 +109,12 @@ export function InvestigationInbox({ complaintId }: InvestigationInboxProps) {
           <EmptyState compact icon={<MessageSquare />} title="No messages yet" description="Start the conversation. The reporter sees your message in the app." />
         ) : (
           messages.map((m) => {
-            const mine = m.sender.includes(currentUser.name);
+            const reporter = m.sender === 'Anonymous Reporter' || m.sender.startsWith('Anonymous Reporter (');
+            const mine = !reporter;
             return (
-              <div key={m.id} className={`flex animate-enter flex-col ${mine ? 'items-end' : 'items-start'}`}>
+              <div key={m.id} data-message-side={reporter ? 'reporter' : 'reviewer'} className={`flex animate-enter flex-col ${mine ? 'items-end' : 'items-start'}`}>
                 <p className="mb-1 text-[0.6875rem] text-muted">
-                  <span className="font-semibold text-ink-soft">{m.sender}</span> · {formatDateTime(m.timestamp)}
+                  <span className="font-semibold text-ink-soft">{reporter ? 'Anonymous reporter' : 'Investigation team'}</span> · {formatDateTime(m.timestamp)}
                 </p>
                 <p
                   className={`max-w-[min(34rem,85%)] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[0.8125rem] leading-relaxed ${

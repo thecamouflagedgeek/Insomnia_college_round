@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:intl/intl.dart';
 
@@ -46,15 +47,18 @@ const _eventTitles = {
   'status_changed': 'Status changed',
   'resolution_recorded': 'Resolution recorded',
   'export_generated': 'Evidence package exported',
+  'evidence_viewed': 'Evidence opened by staff',
   'reflection_recorded': 'Feedback received',
 };
 
-const _verifyStates = {
-  'verified': 'Verified on Polygon',
-  'pending_anchor': 'Sealed, waiting for the next Polygon anchor',
+final _chainName = chainText('Polygon', 'the offline test chain');
+
+final _verifyStates = {
+  'verified': 'Verified on $_chainName',
+  'pending_anchor': 'Sealed, waiting for the next anchor on $_chainName',
   'tampered': 'Verification failed: record was altered',
   'chain_broken': 'Verification failed: an earlier record changed',
-  'anchor_mismatch': 'Verification failed: does not match Polygon',
+  'anchor_mismatch': 'Verification failed: does not match $_chainName',
 };
 
 /// EmployeeRepository over shared/api-contract.yaml. Drop-in for DemoRepository; see [liveRepositoryProvider].
@@ -87,6 +91,16 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
       dateIsIncident: incident != null,
       files: [
         for (final e in view['evidence'] as List) (e as Json)['name'] as String,
+      ],
+      evidence: [
+        for (final e in (view['evidence'] as List).cast<Json>())
+          EvidenceRef(
+            e['evidence_id'] as String,
+            e['name'] as String,
+            e['mime'] as String,
+            (e['size'] as num).toInt(),
+            e['sha256'] as String,
+          ),
       ],
       suggestedCategories: List<String>.from(view['categories'] as List),
       committee: [
@@ -316,6 +330,11 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
   }
 
   @override
+  Future<Uint8List> evidenceFile(Report report, EvidenceRef item) async => Uint8List.fromList(
+    await _api.evidenceFile(report.id, await _token(report.id), item.id),
+  );
+
+  @override
   Future<List<AuditEvent>> audit(Report report) async {
     final token = await _token(report.id);
     final verification = await _api.verify(report.id, token);
@@ -338,6 +357,8 @@ class LiveRepository implements EmployeeRepository, StoryReportRepository {
     final at = event['at'] as String? ?? '';
     final tx = receipt?['anchor_tx'] as String?;
     if (tx == null) return 'Sealed $at. Not yet anchored.';
-    return 'Sealed $at. Anchored on Polygon Amoy in tx ${tx.substring(0, 10)}…\n${receipt!['explorer_url']}';
+    if (offlineChain) return 'Sealed $at. Anchored on the offline test chain (no public transaction).';
+    final url = receipt!['explorer_url'] as String?;
+    return 'Sealed $at. Anchored on Polygon Amoy in tx ${tx.substring(0, 10)}…${url == null ? '' : '\n$url'}';
   }
 }

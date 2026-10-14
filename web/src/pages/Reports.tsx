@@ -26,17 +26,15 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  const loadReports = async (silent: boolean | unknown = false, isCurrent: () => boolean = () => true) => {
-    const isSilent = silent === true;
-    if (!isSilent) {
-      setLoading(true);
-      setError(null);
-    }
+  // A background refresh keeps the current list on failure (no flicker), but still says that loading failed.
+  const loadReports = async (silent = false, isCurrent = () => true) => {
+    if (!silent) { setLoading(true); setComplaints([]); }
     const res = await ApiService.getReports();
     if (!isCurrent()) return;
-    if (res.success && res.data) setComplaints(res.data);
-    else if (!isSilent) setError(res.error || 'Could not load complaints.');
-    if (!isSilent) setLoading(false);
+    setError(res.success ? null : res.error || 'Could not load complaints.');
+    if (res.success) setComplaints(res.data ?? []);
+    else if (!silent) setComplaints([]);
+    setLoading(false);
   };
 
   useAutoRefresh((isCurrent, initial) => loadReports(!initial, isCurrent), [currentUser.id]);
@@ -63,7 +61,7 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
         title="Complaints Queue"
         description="Anonymous reports you are authorised to see. Reporter identities are never shown; tokens are case-specific."
         actions={
-          <button className="btn btn-secondary btn-sm" onClick={loadReports} disabled={loading}>
+          <button className="btn btn-secondary btn-sm" onClick={() => void loadReports()} disabled={loading}>
             <RefreshCw className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
@@ -102,7 +100,7 @@ export function Reports({ onSelectComplaint }: ReportsProps) {
             role="alert"
             title="Complaints could not be loaded"
             action={
-              <button className="btn btn-secondary btn-sm" onClick={loadReports}>
+              <button className="btn btn-secondary btn-sm" onClick={() => void loadReports()}>
                 <RefreshCw />
                 Retry
               </button>

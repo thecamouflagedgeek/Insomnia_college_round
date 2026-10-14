@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { AlertTriangle, ArrowLeft, Check, FileText, Lock, Scale } from 'lucide-react';
 import { Complaint } from '../types/complaint';
@@ -41,26 +41,34 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const accessDenied = useRef(false);
   const fetchCase = async (silent = false, isCurrent: () => boolean = () => true) => {
+    if (silent && accessDenied.current) return;
+    if (!silent) {
+      accessDenied.current = false;
+      setLoading(true);
+      setAccessError(null);
+      setComplaint(null);
+      setChallenge(null);
+    }
     if (!complaintId) {
       setLoading(false);
       return;
-    }
-    if (!silent) {
-      setLoading(true);
-      setAccessError(null);
     }
     const res = await ApiService.getReport(complaintId);
     if (!isCurrent()) return;
     if (res.success && res.data) {
       setComplaint(res.data);
+      setAccessError(null);
       const ch = await ApiService.getChallenges();
       if (!isCurrent()) return;
       setChallenge(
         ch.data?.find((c) => c.complaintId === complaintId && c.status === 'pending_independent_review') ?? null
       );
-    } else if (!silent) {
+    } else {
+      accessDenied.current = res.status === 401 || res.status === 403;
       setComplaint(null);
+      setChallenge(null);
       setAccessError(res.error || `You are not authorised to view case ${complaintId}.`);
     }
     if (!silent) setLoading(false);
@@ -102,7 +110,7 @@ export function ReportDetails({ complaintId, onBack, onNavigate }: ReportDetails
   }
 
   if (accessError) {
-    return <AccessDeniedBanner caseId={complaintId} errorMessage={accessError} onBack={onBack} onRetry={fetchCase} />;
+    return <AccessDeniedBanner caseId={complaintId} errorMessage={accessError} onBack={onBack} onRetry={() => void fetchCase()} />;
   }
 
   if (!complaint) return null;

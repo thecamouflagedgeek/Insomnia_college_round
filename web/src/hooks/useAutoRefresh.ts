@@ -48,16 +48,19 @@ function handleStorageEvent(e: StorageEvent) {
   }
 }
 
+// One named handler each, so removeEventListener removes exactly what addEventListener added.
+const refreshLocal = () => refreshDashboard(false);
+
 function subscribe(refresh: () => void) {
   listeners.add(refresh);
   if (!timer) {
-    timer = setInterval(() => refreshDashboard(false), 3000);
+    timer = setInterval(refreshLocal, 3000);
     if (typeof window !== 'undefined') {
-      window.addEventListener('focus', () => refreshDashboard(false));
+      window.addEventListener('focus', refreshLocal);
       window.addEventListener('storage', handleStorageEvent);
     }
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => refreshDashboard(false));
+      document.addEventListener('visibilitychange', refreshLocal);
     }
   }
   return () => {
@@ -68,11 +71,11 @@ function subscribe(refresh: () => void) {
         timer = undefined;
       }
       if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', () => refreshDashboard(false));
+        window.removeEventListener('focus', refreshLocal);
         window.removeEventListener('storage', handleStorageEvent);
       }
       if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', () => refreshDashboard(false));
+        document.removeEventListener('visibilitychange', refreshLocal);
       }
     }
   };

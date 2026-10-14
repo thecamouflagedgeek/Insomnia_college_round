@@ -15,20 +15,13 @@ export function ReflectReformCard() {
   const [data, setData] = useState<ReflectReformInsights | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable' | 'forbidden'>('loading');
 
-  const load = async (silent = false, isCurrent = () => true) => {
-    if (!silent) setState('loading');
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) { setState('loading'); setData(null); }
     const res = await ApiService.getInsights();
     if (!isCurrent()) return;
-    if (res.success && res.data) {
-      setData(res.data);
-      setState('ok');
-    } else {
-      setData(null);
-      setState(res.status === 403 ? 'forbidden' : 'unavailable');
-    }
-  };
-
-  useAutoRefresh((isCurrent, initial) => load(!initial, isCurrent), [currentUser.id]);
+    setData(res.success ? res.data ?? null : null);
+    setState(res.success ? 'ok' : res.status === 403 ? 'forbidden' : 'unavailable');
+  }, [currentUser.id]);
 
   return (
     <Section

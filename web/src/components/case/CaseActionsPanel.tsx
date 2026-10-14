@@ -157,16 +157,12 @@ export function RelatedCasesPanel({ complaintId, onOpenCase }: { complaintId: st
   const [related, setRelated] = useState<RelatedCases | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable'>('loading');
 
-  const load = async (isCurrent = () => true) => {
+  useAutoRefresh(async (isCurrent, initial) => {
+    if (initial) { setState('loading'); setRelated(null); }
     const res = await ApiService.getRelatedCases(complaintId);
     if (!isCurrent()) return;
     setRelated(res.success ? res.data ?? null : null);
     setState(res.success ? 'ok' : 'unavailable');
-  };
-
-  useAutoRefresh(async (isCurrent, initial) => {
-    if (initial) setState('loading');
-    await load(isCurrent);
   }, [complaintId, currentUser.id]);
 
   const similar = related?.similar ?? [];

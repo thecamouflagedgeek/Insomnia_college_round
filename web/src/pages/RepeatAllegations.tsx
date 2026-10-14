@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
-import { FileStack, GitCompareArrows, Layers, ShieldAlert, UserRoundSearch } from 'lucide-react';
+import { useState } from 'react';
+import { FileStack, RefreshCw, GitCompareArrows, Layers, ShieldAlert, UserRoundSearch } from 'lucide-react';
 import { ApiService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { PatternReport } from '../types/intelligence';
@@ -20,28 +20,6 @@ interface Cluster {
   note: string;
 }
 
-// Shown only when the live backend is unavailable, and labelled as sample data.
-const SAMPLE_CLUSTERS: Cluster[] = [
-  {
-    id: 'sample-1',
-    kind: 'subject',
-    title: 'Several reports name the same person',
-    context: 'Global Operations & Logistics',
-    caseRefs: ['INC-892', 'INC-833'],
-    measure: '2 separate reports',
-    note: 'Reporters describe rating overrides after raising safety concerns.'
-  },
-  {
-    id: 'sample-2',
-    kind: 'similar',
-    title: 'Similar incident descriptions',
-    context: 'Cloud Infrastructure Group',
-    caseRefs: ['INC-650', 'INC-741'],
-    measure: 'Similarity 0.71',
-    note: 'Both describe compensation bands differing across comparable roles.'
-  }
-];
-
 interface RepeatAllegationsProps {
   onOpenCase?: (caseId: string) => void;
 }
@@ -49,21 +27,17 @@ interface RepeatAllegationsProps {
 export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
   const { currentUser } = useAuth();
   const [live, setLive] = useState<PatternReport | null>(null);
-  const [state, setState] = useState<'loading' | 'live' | 'sample' | 'forbidden'>('loading');
+  const [state, setState] = useState<'loading' | 'live' | 'error' | 'forbidden'>('loading');
+  const [error, setError] = useState('');
 
+  // Live: the correlation + repeat-allegation engines over the cases this user may access.
   const load = async (silent = false, isCurrent = () => true) => {
-    if (!silent) setState('loading');
+    if (!silent) { setState('loading'); setLive(null); }
     const res = await ApiService.getPatterns();
     if (!isCurrent()) return;
-    if (res.success && res.data) {
-      setLive(res.data);
-      setState('live');
-    } else {
-      setLive(null);
-      setState(res.status === 403 ? 'forbidden' : 'sample');
-    }
+    if (res.success && res.data) { setLive(res.data); setState('live'); }
+    else { setLive(null); setError(res.error || 'Pattern analysis is unavailable.'); setState(res.status === 403 ? 'forbidden' : 'error'); }
   };
-
   useAutoRefresh((isCurrent, initial) => load(!initial, isCurrent), [currentUser.id]);
 
   const clusters: Cluster[] = live
@@ -87,9 +61,7 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
           note: live.limitation
         }))
       ]
-    : state === 'sample'
-      ? SAMPLE_CLUSTERS
-      : [];
+    : [];
 
   const subjects = clusters.filter((c) => c.kind === 'subject');
   const similar = clusters.filter((c) => c.kind === 'similar');
@@ -107,6 +79,21 @@ export function RepeatAllegations({ onOpenCase }: RepeatAllegationsProps) {
       </Notice>
 
       {state === 'loading' && <LoadingState message="Analysing accessible cases" />}
+      {state === 'error' && (
+        <Notice
+          tone="danger"
+          role="alert"
+          title="Patterns could not be loaded"
+          action={
+            <button className="btn btn-secondary btn-sm" onClick={() => void load()}>
+              <RefreshCw />
+              Retry
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
       {state === 'forbidden' && (
         <div className="card">
           <EmptyState icon={<ShieldAlert />} title="Not available to your role" description="Pattern analysis is limited to HR and oversight roles." />

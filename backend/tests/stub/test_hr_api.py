@@ -131,3 +131,66 @@ def test_committee_pool(client, case):
     pool = client.get("/hr/committee-pool", headers=as_("usr_sarah")).json()
     marcus = next(m for m in pool if m["id"] == "usr_marcus")
     assert marcus["assignmentStatus"] == "active_assigned" and marcus["currentWorkload"] == 1
+
+
+def test_committee_assignment_respects_challenges(client, case):
+    case_id, token = case
+    url = f"/hr/cases/{case_id}/committee"
+    seat = lambda sid, ids: client.post(url, headers=as_(sid), json={"member_ids": ids})
+
+    assert seat("usr_elena", ["usr_david", "usr_priya"]).status_code == 403  # HR or admin only
+    assert seat("usr_sarah", ["usr_david", "usr_david"]).json()["detail"]["reason"] == "duplicate_member"
+    assert seat("usr_sarah", ["usr_david", "usr_aris"]).json()["detail"]["reason"] == "not_committee_member"
+    assert seat("usr_sarah", ["usr_david", "nobody"]).status_code == 422
+
+    ok = seat("usr_sarah", ["usr_david", "usr_priya", "usr_marcus"])
+    assert ok.status_code == 200 and ok.json()["committeeMemberIds"] == ["usr_david", "usr_priya", "usr_marcus"]
+
+    cid = file_challenge(client, case_id, token)  # reporter challenges Marcus
+    frozen = seat("usr_sarah", ["usr_marcus", "usr_david"])
+    assert frozen.status_code == 409 and frozen.json()["detail"]["reason"] == "challenge_pending"
+
+    body = {"decision": "approve", "rationale": "Direct reporting line is a clear conflict."}
+    assert client.post(f"/hr/challenges/{cid}/decide", headers=as_("usr_aris"), json=body).status_code == 200
+    back = seat("usr_sarah", ["usr_marcus", "usr_david"])
+    assert back.status_code == 409 and back.json()["detail"]["reason"] == "member_removed_by_challenge"
+    assert seat("usr_sarah", ["usr_david", "usr_priya"]).status_code == 200
+
+    events = wait_verified(client, case_id, token)["events"]
+    assert sum(e["event_type"] == "committee_assigned" for e in events) >= 2  # both seatings are audited
+    dto = client.get(f"/hr/cases/{case_id}", headers=as_("usr_sarah")).json()
+    assert dto["committeeMemberIds"] == ["usr_david", "usr_priya"] and dto["revokedMemberIds"] == ["usr_marcus"]
+
+
+def test_upheld_challenge_with_no_free_replacement(client, case, monkeypatch):
+    """Every eligible member already seated: the challenge is still upheld, with no replacement and no crash."""
+    from app.stub.store import STAFF
+    for sid in [i for i, s in STAFF.items()
+                if s["role"] == "committee_member" and i not in {"usr_marcus", "usr_david", "usr_priya"}]:
+        monkeypatch.delitem(STAFF, sid)  # the roster outgrew the 5-seat cap; shrink it so nobody is free
+    case_id, token = case
+    assert client.post(f"/hr/cases/{case_id}/committee", headers=as_("usr_sarah"),
+                       json={"member_ids": ["usr_marcus", "usr_david", "usr_priya"]}).status_code == 200
+    cid = file_challenge(client, case_id, token)
+    body = {"decision": "approve", "rationale": "Direct reporting line is a clear conflict."}
+    out = client.post(f"/hr/challenges/{cid}/decide", headers=as_("usr_aris"), json=body)
+    assert out.status_code == 200
+    assert out.json()["updatedComplaint"]["committeeMemberIds"] == ["usr_david", "usr_priya"]
+    assert out.json()["updatedComplaint"]["revokedMemberIds"] == ["usr_marcus"]
+
+
+def test_offline_state_survives_restart(tmp_path):
+    """Cases, their audit history and used nullifiers are restored together from the encrypted state file."""
+    import base64, secrets as _s
+    env = {**ENV, "STUB_STATE_PATH": str(tmp_path / "state.json"),
+           "ENCRYPTION_KEY": base64.urlsafe_b64encode(_s.token_bytes(32)).decode()}
+    with TestClient(create_app(dict(env))) as c1:
+        r = submit(c1).json()
+        case_id, token = r["case_id"], r["case_token"]
+        before = wait_verified(c1, case_id, token)["events"]
+    raw = (tmp_path / "state.json").read_text()
+    assert "shouting" not in raw  # report text is encrypted at rest
+    with TestClient(create_app(dict(env))) as c2:
+        after = wait_verified(c2, case_id, token)["events"]
+        assert [e["event_type"] for e in after] == [e["event_type"] for e in before]
+        assert len(c2.get("/hr/cases", headers=as_("usr_sarah")).json()) == 1

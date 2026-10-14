@@ -12,12 +12,12 @@ export function useAccessibleCases() {
   const [loading, setLoading] = useState(true);
 
   useAutoRefresh(async (isCurrent, initial) => {
-    if (initial) setLoading(true);
+    if (initial) { setCases([]); setLoading(true); }
     const res = await ApiService.getReports();
     if (!isCurrent()) return;
-    const list = res.data || [];
+    const list = res.success ? res.data ?? [] : [];
     setCases(list);
-    setSelectedCaseId((cur) => (list.some((c) => c.id === cur) ? cur : list[0]?.id || ''));
+    setSelectedCaseId(cur => list.some(c => c.id === cur) ? cur : list[0]?.id ?? '');
     setLoading(false);
   }, [currentUser.id]);
 

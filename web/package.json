@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "lint": "oxlint src",
+    "preview": "vite preview",
+    "test:browser": "node test/auto-refresh.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
