@@ -23,16 +23,21 @@ void main() {
       (r) => r.challenges.isEmpty && r.status == 'Committee assigned',
     );
     final committee = report.committee.map((m) => m.id).toList();
-    await repository.challenge(
-      report,
-      committee.first,
-      'Prior involvement',
-      'A contextual explanation',
+    // Demo mode mirrors challenges to the seeded backend case. flutter_test answers every HTTP request
+    // with 400, so here the sync fails and the app must say so rather than claim it was sent.
+    await expectLater(
+      repository.challenge(
+        report,
+        committee.first,
+        'Prior involvement',
+        'A contextual explanation',
+      ),
+      throwsA(isA<SyncWarningException>()),
     );
     final filed = report.challenges.single.status.toLowerCase();
-    expect(filed, contains('pending'));
+    expect(filed, contains('not synced'));
     expect(filed, isNot(anyOf(contains('approved'), contains('upheld'))));
-    expect(report.status, 'Committee assigned');
+    expect(report.status, 'Under challenge');
     expect(report.committee.map((m) => m.id).toList(), committee);
     final audit = await repository.audit(report);
     expect(audit.any((event) => event.state == 'Verified'), isFalse);
@@ -46,9 +51,13 @@ void main() {
       DateTime(2026),
       [],
     );
-    expect(report.id, startsWith('DEMO-'));
-    await repository.send(report, 'More context');
-    expect(report.messages.last.sender, 'You');
+    // Short demo numbers never collide with backend ids (INC- plus 8 hex characters).
+    expect(report.id, matches(RegExp(r'^INC-\d{4}$')));
+    await expectLater(
+      repository.send(report, 'More context'),
+      throwsA(isA<SyncWarningException>()),
+    );
+    expect(report.messages.last.sender, startsWith('You'));
     final invitation = (await repository.invitations()).first;
     await repository.respond(invitation, 'Declined — demo');
     expect(invitation.response, 'Declined — demo');

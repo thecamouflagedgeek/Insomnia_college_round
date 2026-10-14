@@ -780,10 +780,13 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
     return PageShell(
       title: 'Fairness deserves\na second look.',
       children: [
-        Row(
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
           children: [
             Text(widget.report.id, style: const TextStyle(fontWeight: FontWeight.bold, color: purple)),
-            const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -932,8 +935,10 @@ class _ChallengeScreenState extends ConsumerState<ChallengeScreen> {
                     children: [
                       const Icon(Icons.shield_outlined, color: Color(0xFFEA580C), size: 20),
                       const SizedBox(width: 8),
-                      Text(challenge.member, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const Spacer(),
+                      Expanded(
+                        child: Text(challenge.member, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
